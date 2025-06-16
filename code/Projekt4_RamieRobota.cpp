@@ -5,10 +5,64 @@
 #include <cmath>
 #include <objidl.h>
 #include <gdiplus.h>
+#include <functional>
 using namespace Gdiplus;
 #pragma comment (lib, "Gdiplus.lib")
 
 #define MAX_LOADSTRING 100
+
+struct ArmModule {
+    std::function<float()> xStartJoint;
+    std::function<float()> yStartJoint;
+    std::function<float()> angleMod;
+
+    float length;
+
+    ArmModule(float l,std::function<float()> fi, std::function<float()> xsj, std::function<float()> ysj) : length(l), angleMod(fi), xStartJoint(xsj), yStartJoint(ysj) {};
+    
+    float xStart() const {
+        return xStartJoint();
+    }
+
+    float yStart() const {
+        return yStartJoint();
+    }
+
+    float angle() const {
+        return angleMod();
+    }
+
+    float xEnd() const {
+        return  xStart() + length * cos(angle());
+    }
+    float yEnd() const {
+        return yStart() + length * sin(angle());
+    }
+};
+
+struct Klocek {
+    float height;
+    float weight;
+    int type; //1- koło 2- trójkąt itd??
+};
+
+class RobotArm {
+public:
+    float angleShoulder;
+    float angleElbow;
+    float velocity;
+    ArmModule forearm;
+    ArmModule shoulder;
+
+    RobotArm() = default;
+    RobotArm(float angle1, float angle2, float v, ArmModule firstModule, ArmModule secondModule) : angleShoulder(angle1), angleElbow(angle2), velocity(v), shoulder(firstModule), forearm(secondModule) {};
+
+    void angleChange(ArmModule module) {
+        
+    }
+
+};
+
 
 // Zmienne globalne:
 HINSTANCE hInst;                                // bieżące wystąpienie
@@ -22,15 +76,24 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
 
-VOID OnPaint(HDC hdc) //generated paint func
+VOID OnPaint(HDC hdc, ArmModule &baseModule, ArmModule &secondModule) //generated paint func
 {
+
     Graphics graphics(hdc);
     Pen pen(Color(255, 0, 0, 255), 5); // Czerwony, gruby długopis
     SolidBrush jointBrush(Color(255, 0, 0, 255)); // Czerwony pędzel do przegubów
+    int baseX = 300;
+    float baseXf = 300;
+    int baseY = 400;
+    float baseYf = 400;
+
+    float l = 300;
+
+    graphics.DrawLine(&pen, baseModule.xStart(), baseModule.yStart(), baseModule.xEnd(), baseModule.yEnd());
+    graphics.DrawLine(&pen, secondModule.xStart(), secondModule.yStart(), secondModule.xEnd(), secondModule.yEnd());
 
     // Pozycje bazowe
-    int baseX = 300;
-    int baseY = 400;
+
 
     // Długości segmentów
     int length1 = 100; // długość dolnego ramienia
@@ -170,6 +233,11 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
+bool arrowUP = false;
+bool arrowDOWN = false;
+bool arrowLEFT = false;
+bool arrowRIGHT = false;
+
 //
 //  FUNKCJA: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -182,8 +250,50 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+    static float angle = 0;
+    static float angle2 = 0;
+    static const float xBase = 300;
+    static const float yBase = 400;
+    static ArmModule shoulder(200,
+        [&]() {return angle; },
+        [&]() {return xBase; },
+        [&]() {return yBase; });
+    static ArmModule forearm(200,
+        [&]() {return angle2; },
+        [&]() {return shoulder.xEnd(); },
+        [&]() {return shoulder.yEnd(); });
+
+    RobotArm MainArm(angle, angle, 2, shoulder, forearm);
+
     switch (message)
     {
+    case WM_KEYDOWN:
+        if (wParam == VK_UP) arrowUP = true;
+        if (wParam == VK_DOWN) arrowDOWN = true;
+        if (wParam == VK_RIGHT) arrowRIGHT = true;
+        if (wParam == VK_LEFT) arrowLEFT = true;
+        return 0;
+    case WM_KEYUP:
+        if (wParam == VK_UP) arrowUP = false;
+        if (wParam == VK_DOWN) arrowDOWN = false;
+        if (wParam == VK_RIGHT) arrowRIGHT = false;
+        if (wParam == VK_LEFT) arrowLEFT = false;
+        return 0;
+    case WM_CREATE:
+       {
+            SetTimer(hWnd, 1, 8, NULL);
+       }
+       return 0;
+    case WM_TIMER:
+        // tutaj można da funkcje która wykonuje się co ileś czasu
+        if (arrowUP) {
+            angle += 0.01;
+        }
+        if (arrowDOWN) angle -= 0.01;
+        if (arrowLEFT) angle2 += 0.01;
+        if (arrowRIGHT) angle2 -= 0.01;
+        InvalidateRect(hWnd, NULL, FALSE);
+        return 0;
     case WM_COMMAND:
         {
             int wmId = LOWORD(wParam);
@@ -205,15 +315,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: Tutaj dodaj kod rysujący używający elementu hdc...
-            OnPaint(hdc);
-            /////
+            HDC memory = CreateCompatibleDC(hdc); //podwojne buforowanie bo mi migało
+
+            RECT rect;
+            GetClientRect(hWnd, &rect);
+            HBITMAP memBitmap = CreateCompatibleBitmap(hdc, rect.right - rect.left, rect.bottom - rect.top);
+
+
+            HBITMAP oldBitmap = (HBITMAP)SelectObject(memory, memBitmap);
+            FillRect(memory, &rect, (HBRUSH)(COLOR_WINDOW + 1));
+            OnPaint(memory, shoulder, forearm);
+            BitBlt(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, memory, 0, 0, SRCCOPY);
+
+            SelectObject(memory, oldBitmap);
+            DeleteObject(memBitmap);
+            DeleteDC(memory);
+
             EndPaint(hWnd, &ps);
         }
         break;
     case WM_DESTROY:
         PostQuitMessage(0);
         break;
+    case WM_ERASEBKGND:
+        return TRUE;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
@@ -239,32 +364,3 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     }
     return (INT_PTR)FALSE;
 }
-
-////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-struct ArmModule {
-    const float length;
-    float angle;
-    float xPrevJoint;
-    float yPrevJoint;
-    float xEndJoint;
-    float yEndingJoint;
-};
-
-
-class RobotArm {
-public:
-    float angleShoulder;
-    float angleElbow;
-    float velocity;
-    ArmModule forearm;
-    ArmModule shoulder;
-
-    RobotArm() = default;
-    RobotArm(float angle1, float angle2, float v, ArmModule firstModule, ArmModule secondModule) : angleShoulder(angle1), angleElbow(angle2), velocity(v), shoulder(firstModule), forearm(secondModule) {};
-    
-
-
-};
-
-

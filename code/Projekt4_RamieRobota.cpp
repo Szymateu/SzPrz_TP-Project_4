@@ -6,6 +6,9 @@
 #include <objidl.h>
 #include <gdiplus.h>
 #include <functional>
+
+#include <iostream>
+#include <chrono>
 using namespace Gdiplus;
 #pragma comment (lib, "Gdiplus.lib")
 
@@ -48,26 +51,76 @@ struct Klocek {
 
 class RobotArm {
 public:
-    float angleShoulder;
-    float angleElbow;
-    float velocity;
-    ArmModule forearm;
+    //float velocity =1.0f;
     ArmModule shoulder;
+    ArmModule forearm;
 
-    RobotArm() = default;
-    RobotArm(float angle1, float angle2, float v, ArmModule firstModule, ArmModule secondModule) : angleShoulder(angle1), angleElbow(angle2), velocity(v), shoulder(firstModule), forearm(secondModule) {};
+    RobotArm(float vel = 1.0f)
+        :
+        shoulder(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; }),
+        forearm(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; })
+    {
+        setVelocity(vel);
+        shoulder = ArmModule(length,
+            [this]() { return angleShoulder; },
+            [this]() { return xBase; },
+            [this]() { return yBase; });
 
-    void angleChange(ArmModule module) {
-        
+        forearm = ArmModule(length,
+            [this]() { return angleShoulder + angleForearm; },
+            [this]() { return shoulder.xEnd(); },
+            [this]() { return shoulder.yEnd(); });
     }
 
+    float getVelocity() const { return velocity; }
+    void setVelocity(float v) {
+        if (v < 0.0f) velocity = 0.0f;
+        else if (v > 100.0f) velocity = 100.0f;
+        else velocity = v;
+    }
+
+    void MoveArm(bool up, bool down, bool right, bool left) {
+        if (right) {
+            angleShoulder += velocity*0.01;
+        }
+        if (left) {
+            angleShoulder -= velocity*0.01;
+        }
+        if (up) {
+            angleForearm -= velocity*0.01;
+        }
+        if (down) {
+            angleForearm += velocity*0.01;
+        }
+    }
+private:
+    float length = 200;
+    float xBase = 300;
+    float yBase = 400;
+    static float angleShoulder;
+    static float angleForearm;
+    float velocity;
 };
+
+float RobotArm::angleShoulder = -45.0f;
+float RobotArm::angleForearm = 70.0f;
+
+bool MovePossible(RobotArm &RobotArm) {
+    if (RobotArm.forearm.yEnd() <= 410) {
+        return true;
+    }
+    else return true;
+}
 
 
 // Zmienne globalne:
 HINSTANCE hInst;                                // bieżące wystąpienie
 WCHAR szTitle[MAX_LOADSTRING];                  // Tekst paska tytułu
 WCHAR szWindowClass[MAX_LOADSTRING];            // nazwa klasy okna głównego
+bool arrowUP = false;
+bool arrowDOWN = false;
+bool arrowLEFT = false;
+bool arrowRIGHT = false;
 
 // Przekaż dalej deklaracje funkcji dołączone w tym module kodu:
 ATOM                MyRegisterClass(HINSTANCE hInstance);
@@ -75,61 +128,19 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-
-VOID OnPaint(HDC hdc, ArmModule &baseModule, ArmModule &secondModule) //generated paint func
+VOID OnPaint(HDC hdc, RobotArm &RobotArm)
 {
-
     Graphics graphics(hdc);
-    Pen pen(Color(255, 0, 0, 255), 5); // Czerwony, gruby długopis
-    SolidBrush jointBrush(Color(255, 0, 0, 255)); // Czerwony pędzel do przegubów
-    int baseX = 300;
-    float baseXf = 300;
-    int baseY = 400;
-    float baseYf = 400;
+    Pen pen(Color(255, 0, 0, 255), 5);
+    float baseX = 300;
+    float baseY = 400;
 
-    float l = 300;
-
-    graphics.DrawLine(&pen, baseModule.xStart(), baseModule.yStart(), baseModule.xEnd(), baseModule.yEnd());
-    graphics.DrawLine(&pen, secondModule.xStart(), secondModule.yStart(), secondModule.xEnd(), secondModule.yEnd());
-
-    // Pozycje bazowe
-
-
-    // Długości segmentów
-    int length1 = 100; // długość dolnego ramienia
-    int length2 = 80;  // długość górnego ramienia
-
-    // Kąty przegubów (na sztywno, w stopniach)
-    float angle1 = 45.0f; // ramię 1 względem pionu
-    float angle2 = -30.0f;  // ramię 2 względem ramienia 1
-
-    // Konwersja na radiany
-
-    float radi1 = angle1 * 3.14159f / 180.0f;
-    float radi2 = angle2 * 3.14159f / 180.0f;
-
-    // Obliczenie końcowych punktów segmentów
-    int jointX = baseX + (int)(length1 * cos(radi1));
-    int jointY = baseY + (int)(-length1 * sin(radi1));
-
-    int endX = jointX + (int)(length2 * cos(radi1 + radi2));
-    int endY = jointY + (int)(-length2 * sin(radi1 + radi2));
+    graphics.DrawLine(&pen, RobotArm.shoulder.xStart(), RobotArm.shoulder.yStart(), RobotArm.shoulder.xEnd(), RobotArm.shoulder.yEnd());
+    graphics.DrawLine(&pen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
 
     // Podstawa
-    graphics.DrawRectangle(&pen, baseX - 20, baseY, 40, 10);
-
-    // Ramię 1
-    graphics.DrawLine(&pen, baseX, baseY, jointX, jointY);
-    graphics.FillEllipse(&jointBrush, baseX - 5, baseY - 5, 10, 10); // przegub u podstawy
-
-    // Ramię 2
-    graphics.DrawLine(&pen, jointX, jointY, endX, endY);
-    graphics.FillEllipse(&jointBrush, jointX - 5, jointY - 5, 10, 10); // przegub środkowy
-
-    // Chwytak
-    graphics.DrawLine(&pen, endX, endY, endX + 10, endY - 10);
-    graphics.DrawLine(&pen, endX, endY, endX + 10, endY + 10);
-
+    graphics.DrawRectangle(&pen, baseX - 20.0f, baseY, 40.0f, 10.0f);
+    graphics.DrawLine(&pen, 0.0f, baseY+10, 1920.0f, baseY+10);
 }
 
 
@@ -139,7 +150,6 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
                      _In_ int       nCmdShow)
 {
 
-    HWND                hWnd;
     MSG                 msg;
     GdiplusStartupInput gdiplusStartupInput;
     ULONG_PTR           gdiplusToken;
@@ -233,11 +243,6 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    return TRUE;
 }
 
-bool arrowUP = false;
-bool arrowDOWN = false;
-bool arrowLEFT = false;
-bool arrowRIGHT = false;
-
 //
 //  FUNKCJA: WndProc(HWND, UINT, WPARAM, LPARAM)
 //
@@ -250,20 +255,7 @@ bool arrowRIGHT = false;
 //
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-    static float angle = 0;
-    static float angle2 = 0;
-    static const float xBase = 300;
-    static const float yBase = 400;
-    static ArmModule shoulder(200,
-        [&]() {return angle; },
-        [&]() {return xBase; },
-        [&]() {return yBase; });
-    static ArmModule forearm(200,
-        [&]() {return angle2; },
-        [&]() {return shoulder.xEnd(); },
-        [&]() {return shoulder.yEnd(); });
-
-    RobotArm MainArm(angle, angle, 2, shoulder, forearm);
+    static RobotArm MainArm;
 
     switch (message)
     {
@@ -286,12 +278,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
        return 0;
     case WM_TIMER:
         // tutaj można da funkcje która wykonuje się co ileś czasu
-        if (arrowUP) {
-            angle += 0.01;
+        if (MovePossible(MainArm)) {
+            MainArm.MoveArm(arrowUP, arrowDOWN, arrowRIGHT, arrowLEFT);
         }
-        if (arrowDOWN) angle -= 0.01;
-        if (arrowLEFT) angle2 += 0.01;
-        if (arrowRIGHT) angle2 -= 0.01;
         InvalidateRect(hWnd, NULL, FALSE);
         return 0;
     case WM_COMMAND:
@@ -315,21 +304,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             PAINTSTRUCT ps;
             HDC hdc = BeginPaint(hWnd, &ps);
-            HDC memory = CreateCompatibleDC(hdc); //podwojne buforowanie bo mi migało
+            HDC hdcMemory = CreateCompatibleDC(hdc); //podwojne buforowanie bo mi migało
 
             RECT rect;
             GetClientRect(hWnd, &rect);
             HBITMAP memBitmap = CreateCompatibleBitmap(hdc, rect.right - rect.left, rect.bottom - rect.top);
 
 
-            HBITMAP oldBitmap = (HBITMAP)SelectObject(memory, memBitmap);
-            FillRect(memory, &rect, (HBRUSH)(COLOR_WINDOW + 1));
-            OnPaint(memory, shoulder, forearm);
-            BitBlt(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, memory, 0, 0, SRCCOPY);
+            HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcMemory, memBitmap);
+            FillRect(hdcMemory, &rect, (HBRUSH)(COLOR_WINDOW + 1));
+            OnPaint(hdcMemory, MainArm);
+            BitBlt(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, hdcMemory, 0, 0, SRCCOPY);
 
-            SelectObject(memory, oldBitmap);
+            SelectObject(hdcMemory, oldBitmap);
             DeleteObject(memBitmap);
-            DeleteDC(memory);
+            DeleteDC(hdcMemory);
 
             EndPaint(hWnd, &ps);
         }

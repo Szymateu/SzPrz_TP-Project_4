@@ -13,3 +13,9 @@
 #include <malloc.h>
 #include <memory.h>
 #include <tchar.h>
+#include <cmath>
+#include <objidl.h>
+#include <gdiplus.h>
+#include <functional>
+#include <vector>
+#include <deque>

@@ -15,6 +15,9 @@
 #define IDC_MYICON				2
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
+
+#define IDC_BUTTON_RECORD 1001
+#define IDC_BUTTON_STOP 1002
 #endif
 // Następne wartości domyślne dla nowych obiektów
 //

@@ -19,3 +19,6 @@
 #include <functional>
 #include <vector>
 #include <deque>
+#include <optional>
+#include <tuple>
+#include <algorithm>

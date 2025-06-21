@@ -16,8 +16,22 @@
 #ifndef IDC_STATIC
 #define IDC_STATIC				-1
 
+//record/play
 #define IDC_BUTTON_RECORD 1001
 #define IDC_BUTTON_STOP 1002
+#define IDC_BUTTON_PLAY 1003
+
+//add new blocks
+#define IDC_COMBO_SHAPE 1101
+#define IDC_HEIGHT 1102
+#define IDC_WEIGHT 1103
+#define IDC_XPOS 1104
+#define IDC_BUTTON_CREATE 1105
+#define IDC_BUTTON_CLEAR 1106
+
+//automation
+#define IDC_COMBO_TOWER 1201
+#define IDC_BUTTON_START 1202
 #endif
 // Następne wartości domyślne dla nowych obiektów
 //

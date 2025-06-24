@@ -12,6 +12,22 @@ using namespace Gdiplus;
 #define ROBOT_X 500.0f // RobotArm x position
 int velocityGlobal = 1;
 
+// changes angle to be in range <0, 2pi>; type = {0 - shoulder, 1 - forearm}
+float normaliseAngle(float angle, bool type)
+{
+    if (type) // forearm
+    {
+        while (angle > 3.141593) angle -= 6.283185;
+        while (angle < -3.141593) angle += 6.283185;
+    }
+    else // shoulder
+    {
+        while (angle > 6.283185) angle -= 6.283185;
+        while (angle < 0) angle += 6.283185;
+    }
+    return angle;
+}
+
 enum SortType {
     minMax,
     maxMin,
@@ -116,7 +132,7 @@ public:
     float xTower = 0;
     float yBrick = 0;
     float lastBlockHeightInTower = FLOOR_LEVEL;
-    float towerHeight = 0;
+    int towerHeight = 0;
     //Sortowanieee
     bool searchingForBlock = false;
     int searchBlockIndex = 0;
@@ -145,7 +161,10 @@ enum class BuildTower {
     CatchBrick,
     MoveArmUp,
     MoveBrickToTower,
-    ReleaseBrick
+    ReleaseBrick,
+    SkipBrickStart,
+    SkipBrick,
+    SkipBrickTower
 };
 
 enum class SortBlocks {
@@ -158,7 +177,7 @@ public:
     Block* heldBlock = nullptr;
     ArmModule shoulder;
     ArmModule forearm;
-    bool checkCollisions = true;
+    bool checkCollisions = true; // kolizje ramienia
 
     RobotArm()
         :
@@ -195,10 +214,8 @@ public:
     }
 
     void MoveArm(bool up, bool down, bool right, bool left) {
-        while (angleShoulder > 6.283185) angleShoulder -= 6.283185;
-        while (angleShoulder < 0) angleShoulder += 6.283185;
-        while (angleForearm > 3.141593) angleForearm -= 6.283185;
-        while (angleForearm < -3.141593) angleForearm += 6.283185;
+        angleShoulder = normaliseAngle(angleShoulder, 0);
+        angleForearm = normaliseAngle(angleForearm, 1);
 
         if (right
             && (!checkCollisions
@@ -233,14 +250,10 @@ public:
     }
 
     void MoveAngle(TargetAngle& a, KeyManager& key, bool& confirmation) {
-        while (a.angleShoulder > 6.283185) a.angleShoulder -= 6.283185;
-        while (a.angleShoulder < 0) a.angleShoulder += 6.283185;
-        while (a.angleForearm > 3.141593) a.angleForearm -= 6.283185;
-        while (a.angleForearm < -3.141593) a.angleForearm += 6.283185;
-        while (angleShoulder > 6.283185) angleShoulder -= 6.283185;
-        while (angleShoulder < 0) angleShoulder += 6.283185;
-        while (angleForearm > 3.141593) angleForearm -= 6.283185;
-        while (angleForearm < -3.141593) angleForearm += 6.283185;
+        a.angleShoulder = normaliseAngle(a.angleShoulder, 0);
+        a.angleForearm = normaliseAngle(a.angleForearm, 1);
+        angleShoulder = normaliseAngle(angleShoulder, 0);
+        angleForearm = normaliseAngle(angleForearm, 1);
 
         if (std::abs(angleShoulder - a.angleShoulder) > 0.02f) {
             if (angleShoulder < a.angleShoulder) key.arrowLEFT = true;
@@ -295,6 +308,53 @@ public:
         TargetAngle Angles2 = { theta1_2, theta2_2 };
 
         return std::make_optional(std::make_tuple(Angles1, Angles2));
+    }
+
+    std::optional<TargetAngle> PointsToAnglev2(float x, float y) {
+        float L1 = shoulder.length;
+        float L2 = forearm.length;
+
+        x = x - ROBOT_X;
+        y = y - (FLOOR_LEVEL - BASE_LEVEL);
+
+        float r_squared = x * x + y * y;
+        float r = std::sqrt(r_squared);
+
+        if (r > L1 + L2 || r < std::abs(L1 - L2)) {
+            return std::nullopt;
+        }
+
+        float cosTheta2 = (r_squared - L1 * L1 - L2 * L2) / (2 * L1 * L2);
+        if (cosTheta2 > 1.0f) cosTheta2 = 1.0f;
+        if (cosTheta2 < -1.0f) cosTheta2 = -1.0f;
+
+        float theta2_1 = std::acos(cosTheta2);
+        float theta2_2 = -theta2_1;
+
+        float k1 = L1 + L2 * std::cos(theta2_1);
+        float k2 = L2 * std::sin(theta2_1);
+        float theta1_1 = std::atan2(-y, x) - std::atan2(k2, k1);
+
+        k1 = L1 + L2 * std::cos(theta2_2);
+        k2 = L2 * std::sin(theta2_2);
+        float theta1_2 = std::atan2(-y, x) - std::atan2(k2, k1);
+
+        TargetAngle Angles1 = { theta1_1, theta2_1 };
+        TargetAngle Angles2 = { theta1_2, theta2_2 };
+
+        float ang0 = normaliseAngle(theta1_1, 0);
+        float ang1 = normaliseAngle(theta1_2, 0);
+
+        if (ang0 >= 1.570796f && ang0 < 4.712389f) ang0 = 3.141593f - ang0;
+        if (ang0 >= 4.712389f) ang0 -= 6.283185f;
+        if (ang1 >= 1.570796f && ang1 < 4.712389f) ang1 = 3.141593f - ang1;
+        if (ang1 >= 4.712389f) ang1 -= 6.283185f;
+
+        if (ang1 > ang0) {
+            return std::make_optional(Angles2);
+        }
+        else return std::make_optional(Angles1);
+
     }
 
     bool TryCatch(BlockManager& blocks) {
@@ -399,50 +459,71 @@ public:
             if (b.bType == type && b.autoMoved == false) {
                 switch (State) {
                 case BuildTower::GoToStart:
+                {
                     keys.xTower = b.xPoint;
                     keys.yBrick = b.yPoint;
+                    auto anglesOpt2 = MainArm.PointsToAngle(b.xPoint, b.yPoint);
+                    if (!anglesOpt2.has_value()) State = BuildTower::SkipBrickStart;
                     b.autoMoved = true;
                     break;
+                }
+
                 case BuildTower::GoToBrick:
                 {
                     auto anglesOpt2 = MainArm.PointsToAngle(b.xPoint, b.yPoint);
                     if (anglesOpt2.has_value()) {
-                        float ang0 = std::get<0>(*anglesOpt2).angleShoulder;
-                        float ang1 = std::get<1>(*anglesOpt2).angleShoulder;
+                        // przemek: tak wiem że to się da zrobić wszystko prościej ale nie chce mi się już tego robic wiecej, straciłem już na to za dużo czasu
+                        float ang0 = normaliseAngle(std::get<0>(*anglesOpt2).angleShoulder, 0);
+                        float ang1 = normaliseAngle(std::get<1>(*anglesOpt2).angleShoulder, 0);
+
                         if (ang0 >= 1.570796f && ang0 < 4.712389f) ang0 = 3.141593f - ang0;
                         if (ang0 >= 4.712389f) ang0 -= 6.283185f;
                         if (ang1 >= 1.570796f && ang1 < 4.712389f) ang1 = 3.141593f - ang1;
                         if (ang1 >= 4.712389f) ang1 -= 6.283185f;
+
+                        //std::string msg = "Debug float: " + std::to_string(ang0) + "; " + std::to_string(ang1) + "\n";
+                        //OutputDebugStringA(msg.c_str());
                         if (ang1 > ang0) {
                             return std::get<1>(*anglesOpt2);
                         }
                         else return std::get<0>(*anglesOpt2);
                     }
+                    else
+                    {
+                        b.autoMoved = true;
+                        State = BuildTower::SkipBrick;
+                    }
+
                 }break;
                 case BuildTower::MoveBrickToTower:
                 {
-                    keys.yBrick = keys.yBrick - b.height;
+                    keys.yBrick -= b.height;
                     auto anglesOpt3 = MainArm.PointsToAngle((keys.xTower), (keys.yBrick)); // szymon: +1 żeby przesunąć o histereze - wsm można by regulować histereze dla prędkośc i wtedy bardzopowoli bedzie bardzo dokładnie, ale czasu nie ma
                         // przemek: usunąłem bo to nic nie zmienia xd
                     b.autoMoved = true;
                     if (anglesOpt3.has_value()) {
-                        float ang0 = std::get<0>(*anglesOpt3).angleShoulder;
-                        float ang1 = std::get<1>(*anglesOpt3).angleShoulder;
+                        float ang0 = normaliseAngle(std::get<0>(*anglesOpt3).angleShoulder, 0);
+                        float ang1 = normaliseAngle(std::get<1>(*anglesOpt3).angleShoulder, 0);
+
                         if (ang0 >= 1.570796f && ang0 < 4.712389f) ang0 = 3.141593f - ang0;
                         if (ang0 >= 4.712389f) ang0 -= 6.283185f;
                         if (ang1 >= 1.570796f && ang1 < 4.712389f) ang1 = 3.141593f - ang1;
                         if (ang1 >= 4.712389f) ang1 -= 6.283185f;
+
                         if (ang1 > ang0) {
                             return std::get<1>(*anglesOpt3);
                         }
                         else return std::get<0>(*anglesOpt3);
                     }
+                    else
+                    {
+                        MainArm.releaseBlock();
+                        keys.yBrick += b.height;
+                        State = BuildTower::SkipBrickTower;
+                    }
                 }break;
                 }
-                auto anglesOpt = MainArm.PointsToAngle(keys.xTower, keys.yBrick);
-                if (anglesOpt.has_value()) {
-                    return std::get<1>(*anglesOpt);
-                }
+                return TargetAngle(0.785f, 1.57f);
             }
         }
         return TargetAngle(0.785f, 1.57f);
@@ -823,10 +904,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (Keys.moveToStart) MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
         if (MoveInProgress)  MainArm.MoveAngle(MovePosition, Keys, MoveInProgress);
 
-        if (Keys.towerHeight > 5) {
+        if (Keys.towerHeight >= 5) {
             Keys.towerBuild = false;
             Building = BuildTower::GoToStart;
             Keys.towerHeight = 0;
+            Keys.moveToStart = true;
             for (Block& b : BlockManager.BlocksCollection)
             {
                 if (b.bType == Keys.towerType)
@@ -841,15 +923,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             {
                 Keys.moveToStart = true;
                 MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); // najpierw znajdujemy pierwszy klocek
-                Building = BuildTower::GoToBrick;
+                if (Building != BuildTower::SkipBrickStart) Building = BuildTower::GoToBrick;
+                else Building = BuildTower::GoToStart;
                 break;
             }
             case(BuildTower::GoToBrick):
             {
                 if (Keys.moveToStart == false) {
-                    MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); // teraz koordynaty drugiego
                     MoveInProgress = true;
-                    Building = BuildTower::CatchBrick;
+                    MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); // teraz koordynaty drugiego
+                    if (Building != BuildTower::SkipBrick) Building = BuildTower::CatchBrick;
+                    else
+                    {
+                        MoveInProgress = false;
+                        Building = BuildTower::GoToBrick;
+                    }
                 }
                 break;
             }
@@ -860,11 +948,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     Building = BuildTower::MoveBrickToTower;
                     MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); //teraz przenosimy drugi na pierwszy
                 }
-                break;
-            }
-            case(BuildTower::MoveArmUp):
-            {
-                //na razie skip xd
+                if (Building == BuildTower::SkipBrickTower)
+                {
+                    MainArm.releaseBlock();
+                    Building = BuildTower::GoToBrick;
+                }
                 break;
             }
             case(BuildTower::MoveBrickToTower):

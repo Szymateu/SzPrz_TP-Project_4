@@ -7,20 +7,26 @@ using namespace Gdiplus;
 #pragma comment (lib, "Gdiplus.lib")
 
 #define MAX_LOADSTRING 100
-#define FLOOR_LEVEL 550.0f
-#define BASE_LEVEL 20.0f
-#define ROBOT_X 500.0f
+#define FLOOR_LEVEL 550.0f // ground level from top of screen
+#define BASE_LEVEL 20.0f // RobotArm y position relative to ground
+#define ROBOT_X 500.0f // RobotArm x position
 int velocityGlobal = 1;
+
+enum SortType {
+    minMax,
+    maxMin,
+    minMaxMin
+};
 
 struct ArmModule {
     std::function<float()> xStartJoint;
     std::function<float()> yStartJoint;
-    std::function<float()> angleMod;    
+    std::function<float()> angleMod;
 
     float length;
 
-    ArmModule(float l,std::function<float()> fi, std::function<float()> xsj, std::function<float()> ysj) : length(l), angleMod(fi), xStartJoint(xsj), yStartJoint(ysj) {};
-    
+    ArmModule(float l, std::function<float()> fi, std::function<float()> xsj, std::function<float()> ysj) : length(l), angleMod(fi), xStartJoint(xsj), yStartJoint(ysj) {};
+
     float xStart() const {
         return xStartJoint();
     }
@@ -43,7 +49,7 @@ enum class BlockType {
     Circle,
     Triangle,
     Square
-    
+
 };
 
 struct Block {
@@ -86,8 +92,8 @@ struct Block {
 };
 
 struct TargetAngle {
-    float angleShoulder;
-    float angleForearm;
+    float angleShoulder = 0.0f;
+    float angleForearm = 0.0f;
     TargetAngle() = default;
     TargetAngle(float angle1, float angle2) : angleShoulder(angle1), angleForearm(angle2) {}
 };
@@ -110,13 +116,13 @@ public:
     float xTower = 0;
     float yBrick = 0;
     float lastBlockHeightInTower = FLOOR_LEVEL;
-    int towerHeight = 0;
+    float towerHeight = 0;
     //Sortowanieee
     bool searchingForBlock = false;
     int searchBlockIndex = 0;
     std::vector<std::tuple<Block, float>> heightOfBlocksVec;
     SortType sortType = SortType::maxMin;
-  
+
 };
 
 class BlockManager {
@@ -149,12 +155,13 @@ enum class SortBlocks {
 
 class RobotArm {
 public:
-    Block* heldBlock;
+    Block* heldBlock = nullptr;
     ArmModule shoulder;
     ArmModule forearm;
+    bool checkCollisions = true;
 
     RobotArm()
-        : 
+        :
         shoulder(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; }),
         forearm(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; })
     {
@@ -169,25 +176,75 @@ public:
             [this]() { return shoulder.yEnd(); });
     }
 
+    RobotArm(float setLengthFloat)
+        :
+        shoulder(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; }),
+        forearm(0, []() { return 0.0f; }, []() { return 0.0f; }, []() { return 0.0f; })
+    {
+        length = setLengthFloat;
+
+        shoulder = ArmModule(setLengthFloat,
+            [this]() { return angleShoulder; },
+            [this]() { return ROBOT_X; },
+            [this]() { return (FLOOR_LEVEL - BASE_LEVEL); });
+
+        forearm = ArmModule(setLengthFloat,
+            [this]() { return angleShoulder + angleForearm; },
+            [this]() { return shoulder.xEnd(); },
+            [this]() { return shoulder.yEnd(); });
+    }
+
     void MoveArm(bool up, bool down, bool right, bool left) {
-        if (right){//&& angleShoulder <= 0.2) {
-            angleShoulder += velocityGlobal*0.002 + 0.01f;
+        while (angleShoulder > 6.283185) angleShoulder -= 6.283185;
+        while (angleShoulder < 0) angleShoulder += 6.283185;
+        while (angleForearm > 3.141593) angleForearm -= 6.283185;
+        while (angleForearm < -3.141593) angleForearm += 6.283185;
+
+        if (right
+            && (!checkCollisions
+                || angleShoulder >= 0.1f
+                && (forearm.yEnd() <= FLOOR_LEVEL
+                    || angleShoulder >= 1.570796f))) {
+            angleShoulder -= velocityGlobal * 0.002f + 0.01f;
         }
-        if (left){//&& angleShoulder >= 2.94) {
-            angleShoulder -= velocityGlobal*0.002 + 0.01f;
+        if (left
+            && (!checkCollisions
+                || angleShoulder <= 3.0416f
+                && (forearm.yEnd() <= FLOOR_LEVEL
+                    || angleShoulder <= 1.570796f))) {
+            angleShoulder += velocityGlobal * 0.002f + 0.01f;
         }
-        if (up) {
-            angleForearm -= velocityGlobal*0.002 + 0.01f;
+        if (up
+            && (!checkCollisions
+                || angleForearm >= -3.1f
+                && (forearm.yEnd() <= FLOOR_LEVEL
+                    || (angleShoulder <= 1.570796f && angleShoulder + angleForearm <= -1.570796f)
+                    || (angleShoulder >= 1.570796f && angleShoulder + angleForearm <= 4.7124f)))) {
+            angleForearm -= velocityGlobal * 0.002f + 0.01f;
         }
-        if (down) {
-            angleForearm += velocityGlobal*0.002 + 0.01f;
+        if (down
+            && (!checkCollisions
+                || angleForearm <= 3.1f
+                && (forearm.yEnd() <= FLOOR_LEVEL
+                    || (angleShoulder <= 1.570796f && angleShoulder + angleForearm >= -1.570796f)
+                    || (angleShoulder >= 1.570796f && angleShoulder + angleForearm >= 4.7124f)))) {
+            angleForearm += velocityGlobal * 0.002f + 0.01f;
         }
     }
 
-    void MoveAngle(TargetAngle a, KeyManager& key, bool& confirmation) {
+    void MoveAngle(TargetAngle& a, KeyManager& key, bool& confirmation) {
+        while (a.angleShoulder > 6.283185) a.angleShoulder -= 6.283185;
+        while (a.angleShoulder < 0) a.angleShoulder += 6.283185;
+        while (a.angleForearm > 3.141593) a.angleForearm -= 6.283185;
+        while (a.angleForearm < -3.141593) a.angleForearm += 6.283185;
+        while (angleShoulder > 6.283185) angleShoulder -= 6.283185;
+        while (angleShoulder < 0) angleShoulder += 6.283185;
+        while (angleForearm > 3.141593) angleForearm -= 6.283185;
+        while (angleForearm < -3.141593) angleForearm += 6.283185;
+
         if (std::abs(angleShoulder - a.angleShoulder) > 0.02f) {
-            if (angleShoulder < a.angleShoulder) key.arrowRIGHT = true;
-            else if (angleShoulder > a.angleShoulder) key.arrowLEFT = true;
+            if (angleShoulder < a.angleShoulder) key.arrowLEFT = true;
+            else if (angleShoulder > a.angleShoulder) key.arrowRIGHT = true;
         }
         else {
             key.arrowRIGHT = false;
@@ -240,8 +297,6 @@ public:
         return std::make_optional(std::make_tuple(Angles1, Angles2));
     }
 
-
-
     bool TryCatch(BlockManager& blocks) {
         if (heldBlock == nullptr) {
             for (Block& b : blocks.BlocksCollection) {
@@ -260,13 +315,12 @@ public:
                 }
             }
         }
-        else return true;
+        return true;
     }
 
-
     void updateHeldBlock() {
-            heldBlock->xPoint = forearm.xEnd();
-            heldBlock->yPoint = forearm.yEnd();
+        heldBlock->xPoint = forearm.xEnd();
+        heldBlock->yPoint = forearm.yEnd();
     }
 
     void releaseBlock() {
@@ -295,8 +349,9 @@ private:
     float maxLoad = 80.0f;
 };
 
-float RobotArm::angleShoulder = 1.0f;
-float RobotArm::angleForearm = 1.3f;
+// program start - RobotArm positions
+float RobotArm::angleShoulder = 0.785f;
+float RobotArm::angleForearm = 1.57f;
 
 struct SaveMove {
     std::deque<float> angleShoulder;
@@ -304,7 +359,7 @@ struct SaveMove {
     std::deque<bool> tryCatch;
     std::deque<BlockManager> blockSavedPositions;
     bool catching = false;
-    
+
     SaveMove() = default;
 
     void createMemory(RobotArm& MainArm, BlockManager& blockActual) {
@@ -333,18 +388,11 @@ struct SaveMove {
     }
 };
 
-enum SortType {
-    minMax,
-    maxMin,
-    minMaxMin
-};
-
 class Automation {
 public:
     RobotArm& MainArm;
 
     Automation(RobotArm& RobotArm) : MainArm(RobotArm) {}
-
 
     TargetAngle Tower(BlockType& type, KeyManager& keys, BuildTower& State, BlockManager& Blocks) {
         for (Block& b : Blocks.BlocksCollection) {
@@ -359,19 +407,32 @@ public:
                 {
                     auto anglesOpt2 = MainArm.PointsToAngle(b.xPoint, b.yPoint);
                     if (anglesOpt2.has_value()) {
-                        if (b.xPoint < ROBOT_X) {
-                            return std::get<0>(*anglesOpt2);
+                        float ang0 = std::get<0>(*anglesOpt2).angleShoulder;
+                        float ang1 = std::get<1>(*anglesOpt2).angleShoulder;
+                        if (ang0 >= 1.570796f && ang0 < 4.712389f) ang0 = 3.141593f - ang0;
+                        if (ang0 >= 4.712389f) ang0 -= 6.283185f;
+                        if (ang1 >= 1.570796f && ang1 < 4.712389f) ang1 = 3.141593f - ang1;
+                        if (ang1 >= 4.712389f) ang1 -= 6.283185f;
+                        if (ang1 > ang0) {
+                            return std::get<1>(*anglesOpt2);
                         }
-                        else return std::get<1>(*anglesOpt2);
+                        else return std::get<0>(*anglesOpt2);
                     }
                 }break;
-                case BuildTower::MoveBrickToTower: 
+                case BuildTower::MoveBrickToTower:
                 {
                     keys.yBrick = keys.yBrick - b.height;
-                    auto anglesOpt3 = MainArm.PointsToAngle((keys.xTower+1.0f), (keys.yBrick+1.0f)); // +1 żeby przesunąć o histereze - wsm można by regulować histereze dla prędkośc i wtedy bardzopowoli bedzie bardzo dokładnie, ale czasu nie ma
+                    auto anglesOpt3 = MainArm.PointsToAngle((keys.xTower), (keys.yBrick)); // szymon: +1 żeby przesunąć o histereze - wsm można by regulować histereze dla prędkośc i wtedy bardzopowoli bedzie bardzo dokładnie, ale czasu nie ma
+                        // przemek: usunąłem bo to nic nie zmienia xd
                     b.autoMoved = true;
                     if (anglesOpt3.has_value()) {
-                        if (b.xPoint < ROBOT_X) {
+                        float ang0 = std::get<0>(*anglesOpt3).angleShoulder;
+                        float ang1 = std::get<1>(*anglesOpt3).angleShoulder;
+                        if (ang0 >= 1.570796f && ang0 < 4.712389f) ang0 = 3.141593f - ang0;
+                        if (ang0 >= 4.712389f) ang0 -= 6.283185f;
+                        if (ang1 >= 1.570796f && ang1 < 4.712389f) ang1 = 3.141593f - ang1;
+                        if (ang1 >= 4.712389f) ang1 -= 6.283185f;
+                        if (ang1 > ang0) {
                             return std::get<1>(*anglesOpt3);
                         }
                         else return std::get<0>(*anglesOpt3);
@@ -380,13 +441,12 @@ public:
                 }
                 auto anglesOpt = MainArm.PointsToAngle(keys.xTower, keys.yBrick);
                 if (anglesOpt.has_value()) {
-                    return std::get<1>(*anglesOpt); 
+                    return std::get<1>(*anglesOpt);
                 }
             }
         }
-        return TargetAngle(-1.0f, 1.3f);
+        return TargetAngle(0.785f, 1.57f);
     }
-
 
     TargetAngle minMaxSort(BlockManager& blocks, SortType& sortType, KeyManager& Keys, int& blockIndex) {
         std::vector<Block> sortedBlocks;
@@ -402,7 +462,7 @@ public:
                 break;
             }
         }
- 
+
         return moveAngle;
 
 
@@ -437,10 +497,12 @@ public:
     }
 };
 
-bool MovePossible(RobotArm &RobotArm, KeyManager Keys) {
+bool MovePossible(RobotArm& RobotArm, KeyManager Keys) {
     if (Keys.playData) return false;
     else return true;
 }
+
+
 // Zmienne globalne:
 HINSTANCE hInst;                                // bieżące wystąpienie
 WCHAR szTitle[MAX_LOADSTRING];                  // Tekst paska tytułu
@@ -451,9 +513,9 @@ BOOL                InitInstance(HINSTANCE, int);
 LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 
-VOID OnPaint(HDC hdc, RobotArm &RobotArm, BlockManager& Blocks, KeyManager keys)
+VOID OnPaint(HDC hdc, RobotArm& RobotArm, BlockManager& Blocks, KeyManager keys)
 {
-    Graphics graphics(hdc); 
+    Graphics graphics(hdc);
     Color blue(255, 0, 0, 255);
     Color red(255, 255, 0, 0);
     Color green(255, 0, 255, 0);
@@ -467,7 +529,7 @@ VOID OnPaint(HDC hdc, RobotArm &RobotArm, BlockManager& Blocks, KeyManager keys)
     graphics.DrawLine(&pen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
 
     // Podstawa
-    graphics.DrawRectangle(&pen, ROBOT_X - 30.0f, FLOOR_LEVEL- BASE_LEVEL, 60.0f, BASE_LEVEL);
+    graphics.DrawRectangle(&pen, ROBOT_X - 30.0f, FLOOR_LEVEL - BASE_LEVEL, 60.0f, BASE_LEVEL);
     graphics.DrawLine(&pen, 0.0f, FLOOR_LEVEL, 1920.0f, FLOOR_LEVEL);
 
     for (Block& b : Blocks.BlocksCollection) {
@@ -483,12 +545,12 @@ VOID OnPaint(HDC hdc, RobotArm &RobotArm, BlockManager& Blocks, KeyManager keys)
             graphics.DrawRectangle(&blockPen, (b.xPoint - 0.5f * b.width), b.yPoint, b.width, b.height);
             break;
         case (BlockType::Triangle):
-                PointF points[3] = {
-                PointF(b.xPoint, b.yPoint),
-                PointF(b.xPoint-0.5f*b.width,b.yPoint+b.height),
-                PointF(b.xPoint+0.5f*b.width,b.yPoint+b.height)
+            PointF points[3] = {
+            PointF(b.xPoint, b.yPoint),
+            PointF(b.xPoint - 0.5f * b.width,b.yPoint + b.height),
+            PointF(b.xPoint + 0.5f * b.width,b.yPoint + b.height)
             };
-                graphics.DrawPolygon(&blockPen, points, 3);
+            graphics.DrawPolygon(&blockPen, points, 3);
             break;
         }
     }
@@ -542,7 +604,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     }
 
     GdiplusShutdown(gdiplusToken);
-    return (int) msg.wParam;
+    return (int)msg.wParam;
 }
 //
 //  FUNKCJA: MyRegisterClass()
@@ -583,36 +645,36 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //
 BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 {
-   hInst = hInstance; // Przechowuj dojście wystąpienia w naszej zmiennej globalnej
+    hInst = hInstance; // Przechowuj dojście wystąpienia w naszej zmiennej globalnej
 
-   HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-      CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
-   HWND hScrollBar = CreateWindowEx(
-       0,
-       L"SCROLLBAR",
-       NULL,
-       WS_CHILD | WS_VISIBLE | SBS_HORZ,
-       50, 400,
-       300, 20,
-       hWnd,
-       (HMENU)1,
-       hInstance,
-       NULL
-   );
+    HWND hScrollBar = CreateWindowEx(
+        0,
+        L"SCROLLBAR",
+        NULL,
+        WS_CHILD | WS_VISIBLE | SBS_HORZ,
+        100, 105,
+        300, 20,
+        hWnd,
+        (HMENU)1,
+        hInstance,
+        NULL
+    );
 
-   SetScrollRange(hScrollBar, SB_CTL, 0, 10, TRUE);
-   SetScrollPos(hScrollBar, SB_CTL, velocityGlobal, TRUE);
+    SetScrollRange(hScrollBar, SB_CTL, 0, 10, TRUE);
+    SetScrollPos(hScrollBar, SB_CTL, velocityGlobal, TRUE);
 
-   if (!hWnd)
-   {
-      return FALSE;
-   }
+    if (!hWnd)
+    {
+        return FALSE;
+    }
 
-   ShowWindow(hWnd, nCmdShow);
-   UpdateWindow(hWnd);
+    ShowWindow(hWnd, nCmdShow);
+    UpdateWindow(hWnd);
 
-   return TRUE;
+    return TRUE;
 }
 
 //
@@ -631,7 +693,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     static BuildTower Building;
     static SortBlocks Sorting;
     static KeyManager Keys;
-    static RobotArm MainArm;
+    static RobotArm MainArm(250);
     static BlockManager BlockManager;
     static SaveMove SaveMove;
     static Automation Automation(MainArm);
@@ -642,7 +704,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_CREATE:
-       {
+    {
         CreateWindow(L"BUTTON", L"Record", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             20, 50, 60, 30,
             hWnd, (HMENU)IDC_BUTTON_RECORD, hInst, NULL);
@@ -697,8 +759,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         CreateWindow(L"BUTTON", L"CLEAR", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             750, 10, 60, 30,
             hWnd, (HMENU)IDC_BUTTON_CLEAR, hInst, NULL);
-        /// AUTOMATION
 
+        /// AUTOMATION
         CreateWindowW(L"STATIC", L"Automation", WS_CHILD | WS_VISIBLE,
             178, 12, 80, 20, hWnd, NULL, hInst, NULL);
 
@@ -725,8 +787,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         BlockManager.AddBlock(KlocekTest3);
         BlockManager.AddBlock(KlocekTest4);
         SetTimer(hWnd, 1, 8, NULL);
-       }
-       return 0;
+    }
+    return 0;
     case WM_KEYDOWN:
         if (wParam == VK_UP) Keys.arrowUP = true;
         if (wParam == VK_DOWN) Keys.arrowDOWN = true;
@@ -753,19 +815,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (MovePossible(MainArm, Keys)) {
             MainArm.MoveArm(Keys.arrowUP, Keys.arrowDOWN, Keys.arrowRIGHT, Keys.arrowLEFT);
         }
-        if (Keys.moveToStart) MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
-        if(MainArm.heldBlock != nullptr) MainArm.updateHeldBlock();
+        if (MainArm.heldBlock != nullptr) MainArm.updateHeldBlock();
+
         if (Keys.savingData) SaveMove.createMemory(MainArm, BlockManager);
         if (Keys.playData) SaveMove.PlayMemory(MainArm, BlockManager, Keys);
+
+        if (Keys.moveToStart) MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
         if (MoveInProgress)  MainArm.MoveAngle(MovePosition, Keys, MoveInProgress);
-        if (Keys.towerHeight == 5) {
+
+        if (Keys.towerHeight > 5) {
             Keys.towerBuild = false;
             Building = BuildTower::GoToStart;
             Keys.towerHeight = 0;
+            for (Block& b : BlockManager.BlocksCollection)
+            {
+                if (b.bType == Keys.towerType)
+                    b.autoMoved = false;
+            }
         }
         if (Keys.searchingForBlock) MainArm.MoveAngle(MovePosition, Keys, Keys.searchingForBlock);
 
-        if(Keys.towerBuild){
+        if (Keys.towerBuild) {
             switch (Building) {
             case(BuildTower::GoToStart):
             {
@@ -811,14 +881,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 break;
             }
-            }            
+            }
         }
 
         if (Keys.searchingForBlock) {
             switch (Sorting) {
             case (SortBlocks::MeasureBlocks):
-            {
-             //jeśli moveposition jest - jak sie skoncza bloki to przejdz do nastepnego krokuu
+                //jeśli moveposition jest - jak sie skoncza bloki to przejdz do nastepnego krokuu
                 if (Keys.searchBlockIndex <= BlockManager.BlocksCollection.size() && Keys.searchingForBlock == false) {
                     MovePosition = Automation.minMaxSort(BlockManager, Keys.sortType, Keys, Keys.searchBlockIndex);
                     Keys.searchingForBlock = true;
@@ -827,12 +896,9 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     Sorting = SortBlocks::MoveBlocks;
                 }
 
-            }
-            case (SortBlocks::MoveBlocks):
-            {
-
                 break;
-            }
+            case (SortBlocks::MoveBlocks):
+                break;
             }
         }
         InvalidateRect(hWnd, NULL, FALSE);

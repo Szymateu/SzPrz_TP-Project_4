@@ -2,6 +2,7 @@
 //
 #include "framework.h"
 #include "Projekt4_RamieRobota.h"
+#include <string> // do usunięcia na koniec!!!!
 
 using namespace Gdiplus;
 #pragma comment (lib, "Gdiplus.lib")
@@ -9,21 +10,25 @@ using namespace Gdiplus;
 #define MAX_LOADSTRING 100
 #define FLOOR_LEVEL 550.0f // ground level from top of screen
 #define BASE_LEVEL 20.0f // RobotArm y position relative to ground
-#define ROBOT_X 500.0f // RobotArm x position
+#define ROBOT_X 600.0f // RobotArm x position
+
+#define DEFAULT_ANGLE_SHOULDER 1.0f
+#define DEFAULT_ANGLE_FOREARM 1.3f
+
 int velocityGlobal = 1;
 
-// changes angle to be in range <0, 2pi>; type = {0 - shoulder, 1 - forearm}
+// changes angle to be in range <0, 2pi> || <-pi, pi>; type = {0 - shoulder, 1 - forearm}
 float normaliseAngle(float angle, bool type)
 {
     if (type) // forearm
     {
-        while (angle > 3.141593) angle -= 6.283185;
-        while (angle < -3.141593) angle += 6.283185;
+        while (angle > 3.141593) angle -= 6.283185f;
+        while (angle < -3.141593) angle += 6.283185f;
     }
     else // shoulder
     {
-        while (angle > 6.283185) angle -= 6.283185;
-        while (angle < 0) angle += 6.283185;
+        while (angle > 6.283185) angle -= 6.283185f;
+        while (angle < 0) angle += 6.283185f;
     }
     return angle;
 }
@@ -65,7 +70,6 @@ enum class BlockType {
     Circle,
     Triangle,
     Square
-
 };
 
 struct Block {
@@ -108,8 +112,8 @@ struct Block {
 };
 
 struct TargetAngle {
-    float angleShoulder = 0.0f;
-    float angleForearm = 0.0f;
+    float angleShoulder = DEFAULT_ANGLE_SHOULDER;
+    float angleForearm = DEFAULT_ANGLE_FOREARM;
     TargetAngle() = default;
     TargetAngle(float angle1, float angle2) : angleShoulder(angle1), angleForearm(angle2) {}
 };
@@ -120,25 +124,29 @@ public:
     bool arrowDOWN = false;
     bool arrowLEFT = false;
     bool arrowRIGHT = false;
+
     bool catching = false;
     bool savingData = false;
     bool playData = false;
+
+    float shoulderStart = DEFAULT_ANGLE_SHOULDER;
+    float forearmStart = DEFAULT_ANGLE_FOREARM;
     bool moveToStart = false;
-    float shoulderStart = 1.0f;
-    float forearmStart = 1.3f;
     bool angleMove = false;
+
+    // tower building
     bool towerBuild = false;
     BlockType towerType = BlockType::Rectangle;
-    float xTower = 0;
-    float yBrick = 0;
-    float lastBlockHeightInTower = FLOOR_LEVEL;
+    float xTower = 0.0f;
+    float yBrick = 0.0f;
     int towerHeight = 0;
+
     //Sortowanieee
     bool searchingForBlock = false;
-    int searchBlockIndex = 0;
     std::vector<std::tuple<Block, float>> heightOfBlocksVec;
+    std::vector<Block> sortedVec;
     SortType sortType = SortType::maxMin;
-
+    float xDifferenceSorting = 0.0f;
 };
 
 class BlockManager {
@@ -159,7 +167,6 @@ enum class BuildTower {
     GoToStart,
     GoToBrick,
     CatchBrick,
-    MoveArmUp,
     MoveBrickToTower,
     ReleaseBrick,
     SkipBrickStart,
@@ -168,8 +175,14 @@ enum class BuildTower {
 };
 
 enum class SortBlocks {
-    MeasureBlocks,
-    MoveBlocks
+    GoToStart,
+    ArmMeasure,
+    SkipArmMeasure,
+    MeasureBlockHeight,
+    SortingBlocks,
+    GoToBlock,
+    MoveBlock,
+    NoMoreBlocks
 };
 
 class RobotArm {
@@ -499,7 +512,7 @@ public:
                 {
                     keys.yBrick -= b.height;
                     auto anglesOpt3 = MainArm.PointsToAngle((keys.xTower), (keys.yBrick)); // szymon: +1 żeby przesunąć o histereze - wsm można by regulować histereze dla prędkośc i wtedy bardzopowoli bedzie bardzo dokładnie, ale czasu nie ma
-                        // przemek: usunąłem bo to nic nie zmienia xd
+                    // przemek: usunąłem bo to nic nie zmienia xd
                     b.autoMoved = true;
                     if (anglesOpt3.has_value()) {
                         float ang0 = normaliseAngle(std::get<0>(*anglesOpt3).angleShoulder, 0);
@@ -523,58 +536,197 @@ public:
                     }
                 }break;
                 }
-                return TargetAngle(0.785f, 1.57f);
+                return TargetAngle(DEFAULT_ANGLE_SHOULDER, DEFAULT_ANGLE_FOREARM);
             }
         }
-        return TargetAngle(0.785f, 1.57f);
+        return TargetAngle(DEFAULT_ANGLE_SHOULDER, DEFAULT_ANGLE_FOREARM);
     }
 
-    TargetAngle minMaxSort(BlockManager& blocks, SortType& sortType, KeyManager& Keys, int& blockIndex) {
-        std::vector<Block> sortedBlocks;
-        TargetAngle moveAngle;
-        for (Block& b : blocks.BlocksCollection) {
-            if (b == blocks.BlocksCollection[blockIndex]) {
-                if (1) {//tu trzeba zrobić żeby wybierał czy ramieniem w góre czy w dół
-                    moveAngle = std::get<1>(*MainArm.PointsToAngle(b.xPoint, b.yPoint));
-                    Keys.heightOfBlocksVec.push_back(std::make_tuple(b, (FLOOR_LEVEL - MainArm.forearm.yEnd())));
+    TargetAngle MeasureBlocks(KeyManager& Keys, SortBlocks& State, BlockManager& Blocks)
+    {
+        if (State == SortBlocks::ArmMeasure)
+        {
+            for (Block& b : Blocks.BlocksCollection)
+                if (b.autoMoved == false)
+                {
+                    auto angles = MainArm.PointsToAnglev2(b.xPoint, b.yPoint);
+
+                    if (angles.has_value())
+                    {
+                        State = SortBlocks::MeasureBlockHeight;
+                        return *angles;
+                    }
+                    else
+                    {
+                        State = SortBlocks::SkipArmMeasure;
+                        b.autoMoved = true;
+                        return TargetAngle();
+                    }
+
+
                 }
-                else if (0) moveAngle = std::get<0>(*MainArm.PointsToAngle(b.xPoint, b.yPoint));
-                //no tu jest zepsute bo to trzeba poza funkcją żeby teraz się ruszało i wgl - bleee
-                break;
+
+            State = SortBlocks::SortingBlocks;
+        }
+        return TargetAngle();
+    }
+
+    void measureHeight(KeyManager& Keys, BlockManager& Blocks)
+    {
+        int i = 0;
+        for (Block& b : Blocks.BlocksCollection)
+        {
+            if (b.autoMoved == false)
+            {
+                Keys.heightOfBlocksVec.push_back(std::make_tuple(b, FLOOR_LEVEL - MainArm.forearm.yEnd()));
+                std::string msg = "Debug: height = " + std::to_string(FLOOR_LEVEL - MainArm.forearm.yEnd()) + "\n";
+                OutputDebugStringA(msg.c_str());
+                b.autoMoved = true;
+                return;
+            }
+
+            i++;
+        }
+        Keys.heightOfBlocksVec.push_back(std::make_tuple(Blocks.BlocksCollection[i - 1], MainArm.forearm.yEnd()));
+        return;
+    }
+
+    void minMaxSort(std::vector<Block>& sortVector, KeyManager& Keys, SortType& sortType, BlockManager& Blocks) {
+        sortVector.clear();
+
+        int i;
+        int valueIndex;
+        float value;
+
+        const size_t numberOfBlocks = Keys.heightOfBlocksVec.size();
+
+        if (sortType == SortType::minMax)
+        {
+            for (int j = 0; j < numberOfBlocks; j++)
+            {
+                i = 0;
+                valueIndex = 0;
+                value = std::get<1>(Keys.heightOfBlocksVec[0]);
+
+                for (auto& a : Keys.heightOfBlocksVec)
+                {
+                    if (std::get<1>(a) < value)
+                    {
+                        value = std::get<1>(a);
+                        valueIndex = i;
+                    }
+                    i++;
+                }
+                sortVector.push_back(std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+                Keys.heightOfBlocksVec.erase(Keys.heightOfBlocksVec.begin() + valueIndex);
+            }
+        }
+        if (sortType == SortType::maxMin)
+        {
+            for (int j = 0; j < numberOfBlocks; j++)
+            {
+                i = 0;
+                valueIndex = 0;
+                value = std::get<1>(Keys.heightOfBlocksVec[0]);
+
+                for (auto& a : Keys.heightOfBlocksVec)
+                {
+                    if (std::get<1>(a) > value)
+                    {
+                        value = std::get<1>(a);
+                        valueIndex = i;
+                    }
+                    i++;
+                }
+                sortVector.push_back(std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+                Keys.heightOfBlocksVec.erase(Keys.heightOfBlocksVec.begin() + valueIndex);
+            }
+        }
+        if (sortType == SortType::minMaxMin)
+        {
+            int k = 1;
+            for (int j = 0; j < numberOfBlocks; j++)
+            {
+                i = 0;
+                valueIndex = 0;
+                value = std::get<1>(Keys.heightOfBlocksVec[0]);
+
+                for (auto& a : Keys.heightOfBlocksVec)
+                {
+                    if (std::get<1>(a) > value)
+                    {
+                        value = std::get<1>(a);
+                        valueIndex = i;
+                    }
+                    i++;
+                }
+                if (k > 0)
+                    sortVector.push_back(std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+                else
+                    sortVector.insert(sortVector.begin(), std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+
+                Keys.heightOfBlocksVec.erase(Keys.heightOfBlocksVec.begin() + valueIndex);
+                k *= -1;
             }
         }
 
-        return moveAngle;
+        return;
+    }
 
+    TargetAngle sortBlocks(KeyManager& Keys, SortBlocks& State, BlockManager& Blocks)
+    {
+        if (State == SortBlocks::GoToBlock)
+        {
+            for (Block& b : Keys.sortedVec)
+            {
+                //std::string msg = "Debug float: " + std::to_string((float)b.autoMoved) + "\n";
+                //OutputDebugStringA(msg.c_str());
+                if (b.autoMoved == false)
+                {
+                    auto angles = MainArm.PointsToAnglev2(b.xPoint, b.yPoint);
 
-        ////to na razie odcinam - chyba druga funkcja będzie
-        // 
-        //if (0) {
-        //    switch (sortType) {
-        //    case SortType::minMax: {
-        //        std::sort(Keys.heightOfBlocksVec.begin(), Keys.heightOfBlocksVec.end(),
-        //            [](const std::tuple<Block, float>& a, const std::tuple<Block, float>& b) {
-        //                return std::get<1>(a) < std::get<1>(b); // sortuj jeśli a mniejsze od b to a będzie pierwsze
-        //            });
-        //        break;
-        //    }
-        //    case SortType::maxMin: {
-        //        std::sort(Keys.heightOfBlocksVec.begin(), Keys.heightOfBlocksVec.end(),
-        //            [](const std::tuple<Block, float>& a, const std::tuple<Block, float>& b) {
-        //                return std::get<1>(a) > std::get<1>(b);
-        //            });
-        //        break;
-        //    }
-        //    case SortType::minMaxMin: {
-        //        //na razie nie można xd
-        //        break;
-        //    }
-        //    }
-        //    for (auto& tuple : Keys.heightOfBlocksVec) {
-        //        sortedBlocks.push_back(std::get<0>(tuple));
-        //    }
-            //return sortedBlocks;
-        //}
+                    if (angles.has_value())
+                    {
+                        //std::string msg = "Debug: " + std::to_string(b.xPoint) + " " + std::to_string(b.yPoint) + "\n" ;
+                        //OutputDebugStringA(msg.c_str());
+                        //msg = "Debug: " + std::to_string((*angles).angleShoulder) + " " + std::to_string((*angles).angleForearm) + "\n";
+                        //OutputDebugStringA(msg.c_str());
+                        State = SortBlocks::MoveBlock;
+                        return *angles;
+                    }
+                    else
+                    {
+                        b.autoMoved = true;
+                        return TargetAngle();
+                    }
+                }
+            }
+
+        }
+        else if (State == SortBlocks::MoveBlock)
+        {
+            const float lengthArm = MainArm.shoulder.length + MainArm.forearm.length;
+            for (Block& b : Keys.sortedVec)
+                if (b.autoMoved == false)
+                {
+                    auto angles = MainArm.PointsToAnglev2(ROBOT_X - lengthArm + 50.0f + Keys.xDifferenceSorting + b.width / 2, FLOOR_LEVEL - b.height);
+                    b.autoMoved = true;
+                    State = SortBlocks::GoToBlock;
+
+                    if (angles.has_value())
+                    {
+                        Keys.xDifferenceSorting += b.width + 10.0f;
+                        return *angles;
+                    }
+                    else
+                    {
+                        MainArm.releaseBlock();
+                        return TargetAngle();
+                    }
+                }
+        }
+        State = SortBlocks::NoMoreBlocks;
+        return TargetAngle();
     }
 };
 
@@ -736,7 +888,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
         L"SCROLLBAR",
         NULL,
         WS_CHILD | WS_VISIBLE | SBS_HORZ,
-        100, 105,
+        420, 35,
         300, 20,
         hWnd,
         (HMENU)1,
@@ -781,6 +933,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     static TargetAngle StartPosition(Keys.shoulderStart, Keys.forearmStart);
     static TargetAngle MovePosition;
     static bool MoveInProgress;
+    static bool MovementNoCollisions; // 0 - yes collisions, 1 - no collisions
 
     switch (message)
     {
@@ -801,7 +954,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         ////////////     ADD BLOCKS 
         HWND comboShapeAddBlock = CreateWindowW(L"COMBOBOX", NULL,
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-            900, 10, 120, 100,
+            900, 10, 120, 25 * 4,
             hWnd, (HMENU)IDC_COMBO_SHAPE, hInst, NULL);
         SendMessage(comboShapeAddBlock, CB_ADDSTRING, 0, (LPARAM)L"Rectangle");
         SendMessage(comboShapeAddBlock, CB_ADDSTRING, 0, (LPARAM)L"Circle");
@@ -809,7 +962,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         SendMessage(comboShapeAddBlock, CB_ADDSTRING, 0, (LPARAM)L"Triangle");
         SendMessage(comboShapeAddBlock, CB_SETCURSEL, 0, 0);
 
-        CreateWindowW(L"EDIT", L"100",
+        CreateWindowW(L"EDIT", L"60",
             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
             900, 40, 120, 20,
             hWnd, (HMENU)IDC_HEIGHT, hInst, NULL);
@@ -847,23 +1000,30 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         HWND comboTowerShape = CreateWindowW(L"COMBOBOX", NULL,
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-            260, 10, 140, 100,
+            260, 10, 140, 25 * 7,
             hWnd, (HMENU)IDC_COMBO_TOWER, hInst, NULL);
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Rectangle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Circle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Square");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Triangle");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Min to Max");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Max to Min");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Min-Max-Min");
         SendMessage(comboTowerShape, CB_SETCURSEL, 0, 0);
 
         CreateWindow(L"BUTTON", L"START", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
             260, 35, 60, 30,
             hWnd, (HMENU)IDC_BUTTON_START, hInst, NULL);
 
-        Block KlocekTest(100.0f, 70.0f, 700.0f, BlockType::Rectangle); //na razie w Create, później za pomocą przycisków różne ustawienia klocków można zapisać - albo dodać dodawnaie klocków
-        Block KlocekTest2(80.0f, 70.0f, 800.0f, BlockType::Circle); //Block(float height, float weight, float x, BlockType type)
-        Block KlocekTest3(70.0f, 70.0f, 300.0f, BlockType::Triangle);
-        Block KlocekTest4(50.0f, 70.0f, 100.0f, BlockType::Square);
-        BlockManager.AddBlock(KlocekTest);
+        CreateWindowW(L"STATIC", L"Speed", WS_CHILD | WS_VISIBLE,
+            420, 12, 50, 20, hWnd, NULL, hInst, NULL);
+
+        //Block(float height, float weight, float x, BlockType type)
+        Block KlocekTest1(60.0f, 70.0f, 180.0f, BlockType::Square);
+        Block KlocekTest2(130.0f, 70.0f, 400.0f, BlockType::Triangle);
+        Block KlocekTest3(100.0f, 70.0f, 850.0f, BlockType::Rectangle);
+        Block KlocekTest4(80.0f, 70.0f, 1000.0f, BlockType::Circle);
+        BlockManager.AddBlock(KlocekTest1);
         BlockManager.AddBlock(KlocekTest2);
         BlockManager.AddBlock(KlocekTest3);
         BlockManager.AddBlock(KlocekTest4);
@@ -871,6 +1031,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     return 0;
     case WM_KEYDOWN:
+    {
         if (wParam == VK_UP) Keys.arrowUP = true;
         if (wParam == VK_DOWN) Keys.arrowDOWN = true;
         if (wParam == VK_RIGHT) Keys.arrowRIGHT = true;
@@ -883,26 +1044,41 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
         }
         if (wParam == 'R') MainArm.releaseBlock();
-        return 0;
+    }
+    return 0;
     case WM_KEYUP:
+    {
         if (wParam == VK_UP) Keys.arrowUP = false;
         if (wParam == VK_DOWN) Keys.arrowDOWN = false;
         if (wParam == VK_RIGHT) Keys.arrowRIGHT = false;
         if (wParam == VK_LEFT) Keys.arrowLEFT = false;
         if (wParam == VK_SPACE) Keys.catching = false;
-        return 0;
+    }
+    return 0;
     case WM_TIMER:
         // tutaj można dac funkcje która wykonuje się co klatke
         if (MovePossible(MainArm, Keys)) {
-            MainArm.MoveArm(Keys.arrowUP, Keys.arrowDOWN, Keys.arrowRIGHT, Keys.arrowLEFT);
+            if (!MovementNoCollisions)
+                MainArm.MoveArm(Keys.arrowUP, Keys.arrowDOWN, Keys.arrowRIGHT, Keys.arrowLEFT);
+            else
+            {
+                MainArm.checkCollisions = false;
+                MainArm.MoveArm(Keys.arrowUP, Keys.arrowDOWN, Keys.arrowRIGHT, Keys.arrowLEFT);
+                MainArm.checkCollisions = true;
+            }
         }
         if (MainArm.heldBlock != nullptr) MainArm.updateHeldBlock();
 
         if (Keys.savingData) SaveMove.createMemory(MainArm, BlockManager);
         if (Keys.playData) SaveMove.PlayMemory(MainArm, BlockManager, Keys);
 
-        if (Keys.moveToStart) MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
-        if (MoveInProgress)  MainArm.MoveAngle(MovePosition, Keys, MoveInProgress);
+        if (Keys.moveToStart) {
+            MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
+            MovementNoCollisions = true;
+        }
+        else MovementNoCollisions = false;
+
+        if (MoveInProgress) MainArm.MoveAngle(MovePosition, Keys, MoveInProgress);
 
         if (Keys.towerHeight >= 5) {
             Keys.towerBuild = false;
@@ -915,11 +1091,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                     b.autoMoved = false;
             }
         }
-        if (Keys.searchingForBlock) MainArm.MoveAngle(MovePosition, Keys, Keys.searchingForBlock);
 
         if (Keys.towerBuild) {
             switch (Building) {
-            case(BuildTower::GoToStart):
+            case (BuildTower::GoToStart):
             {
                 Keys.moveToStart = true;
                 MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); // najpierw znajdujemy pierwszy klocek
@@ -927,7 +1102,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 else Building = BuildTower::GoToStart;
                 break;
             }
-            case(BuildTower::GoToBrick):
+            case (BuildTower::GoToBrick):
             {
                 if (Keys.moveToStart == false) {
                     MoveInProgress = true;
@@ -941,7 +1116,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 break;
             }
-            case(BuildTower::CatchBrick):
+            case (BuildTower::CatchBrick):
             {
                 if (MoveInProgress == false) {
                     MainArm.TryCatch(BlockManager);
@@ -955,16 +1130,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 }
                 break;
             }
-            case(BuildTower::MoveBrickToTower):
+            case (BuildTower::MoveBrickToTower):
             {
                 MoveInProgress = true;
                 Building = BuildTower::ReleaseBrick;
                 break;
             }
-            case(BuildTower::ReleaseBrick): {
+            case (BuildTower::ReleaseBrick): {
                 if (MoveInProgress == false) {
                     MainArm.releaseBlock();
-                    Keys.towerHeight++;
+                    Keys.towerHeight += 1;
                     Building = BuildTower::GoToBrick;
                 }
                 break;
@@ -974,145 +1149,211 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         if (Keys.searchingForBlock) {
             switch (Sorting) {
-            case (SortBlocks::MeasureBlocks):
-                //jeśli moveposition jest - jak sie skoncza bloki to przejdz do nastepnego krokuu
-                if (Keys.searchBlockIndex <= BlockManager.BlocksCollection.size() && Keys.searchingForBlock == false) {
-                    MovePosition = Automation.minMaxSort(BlockManager, Keys.sortType, Keys, Keys.searchBlockIndex);
-                    Keys.searchingForBlock = true;
+            case (SortBlocks::GoToStart):
+            {
+                Keys.moveToStart = true;
+                Sorting = SortBlocks::ArmMeasure;
+                Keys.heightOfBlocksVec.clear();
+                break;
+            }
+            case (SortBlocks::ArmMeasure):
+            {
+                if (!MoveInProgress && !Keys.moveToStart)
+                {
+                    MovePosition = Automation.MeasureBlocks(Keys, Sorting, BlockManager);
+                    MoveInProgress = true;
                 }
-                else if (Keys.searchBlockIndex > BlockManager.BlocksCollection.size() && Keys.searchingForBlock == false) {
-                    Sorting = SortBlocks::MoveBlocks;
+
+                if (Sorting == SortBlocks::SkipArmMeasure)
+                {
+                    MoveInProgress = false;
+                    Sorting = SortBlocks::ArmMeasure;
                 }
 
                 break;
-            case (SortBlocks::MoveBlocks):
+            }
+            case (SortBlocks::MeasureBlockHeight):
+            {
+                if (!MoveInProgress)
+                {
+                    Automation.measureHeight(Keys, BlockManager);
+                    Sorting = SortBlocks::ArmMeasure;
+                }
                 break;
+            }
+            case (SortBlocks::SortingBlocks):
+            {
+                for (Block& b : BlockManager.BlocksCollection)
+                    b.autoMoved = false;
+
+                Automation.minMaxSort(Keys.sortedVec, Keys, Keys.sortType, BlockManager);
+
+                Sorting = SortBlocks::GoToBlock;
+
+                break;
+            }
+            case (SortBlocks::GoToBlock):
+            {
+                MovementNoCollisions = true;
+                if (!MoveInProgress)
+                {
+                    MoveInProgress = true;
+                    MainArm.releaseBlock();
+                    MovePosition = Automation.sortBlocks(Keys, Sorting, BlockManager);
+                }
+                break;
+            }
+            case (SortBlocks::MoveBlock):
+            {
+                MovementNoCollisions = true;
+                if (!MoveInProgress)
+                {
+                    MoveInProgress = true;
+                    MainArm.TryCatch(BlockManager);
+                    MovePosition = Automation.sortBlocks(Keys, Sorting, BlockManager);
+                }
+                break;
+            }
+            case (SortBlocks::NoMoreBlocks):
+            {
+                for (Block& b : BlockManager.BlocksCollection)
+                    b.autoMoved = false;
+
+                Keys.searchingForBlock = false;
+                Keys.moveToStart = true;
+                Keys.xDifferenceSorting = 0.0f;
+
+                Sorting = SortBlocks::GoToStart;
+
+                break;
+            }
             }
         }
         InvalidateRect(hWnd, NULL, FALSE);
         return 0;
     case WM_COMMAND:
+    {
+        int wmId = LOWORD(wParam);
+
+        switch (wmId)
         {
-            int wmId = LOWORD(wParam);
+        case IDC_BUTTON_CREATE:
+        {
+            // Pobierz dane z pól
+            HWND addCombo = GetDlgItem(hWnd, IDC_COMBO_SHAPE);
+            int index = (int)SendMessage(addCombo, CB_GETCURSEL, 0, 0);
 
-            switch (wmId)
-            {
-            case IDC_BUTTON_CREATE:
-            {
-                // Pobierz dane z pól
-                HWND addCombo = GetDlgItem(hWnd, IDC_COMBO_SHAPE);
-                int index = (int)SendMessage(addCombo, CB_GETCURSEL, 0, 0);
+            wchar_t heightStr[16], weightStr[16], xStr[16];
+            GetWindowText(GetDlgItem(hWnd, IDC_HEIGHT), heightStr, 16);
+            GetWindowText(GetDlgItem(hWnd, IDC_WEIGHT), weightStr, 16);
+            GetWindowText(GetDlgItem(hWnd, IDC_XPOS), xStr, 16);
 
-                wchar_t heightStr[16], weightStr[16], xStr[16];
-                GetWindowText(GetDlgItem(hWnd, IDC_HEIGHT), heightStr, 16);
-                GetWindowText(GetDlgItem(hWnd, IDC_WEIGHT), weightStr, 16);
-                GetWindowText(GetDlgItem(hWnd, IDC_XPOS), xStr, 16);
+            float height = wcstof(heightStr, nullptr);
+            float weight = wcstof(weightStr, nullptr);
+            float xPos = wcstof(xStr, nullptr);
 
-                float height = wcstof(heightStr, nullptr);
-                float weight = wcstof(weightStr, nullptr);
-                float xPos = wcstof(xStr, nullptr);
-
-                BlockType type;
-                switch (index) {
-                case 0: type = BlockType::Rectangle; break;
-                case 1: type = BlockType::Circle; break;
-                case 2: type = BlockType::Square; break;
-                case 3: type = BlockType::Triangle; break;
-                default: type = BlockType::Rectangle; break;
-                }
-
-                Block newBlock(height, weight, xPos, type);
-                BlockManager.AddBlock(newBlock);
-
-                float xPosNew = (type == BlockType::Rectangle || type == BlockType::Triangle) ? xPos + 40.0f : (xPos + height + 10.0f);
-                wchar_t xPosNewStr[16];
-                swprintf(xPosNewStr, 16, L"%.2f", xPosNew);
-                SetWindowText(GetDlgItem(hWnd, IDC_XPOS), xPosNewStr);
-
-                SetFocus(hWnd);
-                break;
+            BlockType type;
+            switch (index) {
+            case 0: type = BlockType::Rectangle; break;
+            case 1: type = BlockType::Circle; break;
+            case 2: type = BlockType::Square; break;
+            case 3: type = BlockType::Triangle; break;
+            default: type = BlockType::Rectangle; break;
             }
-            case IDC_BUTTON_CLEAR:
-                BlockManager.Clear();
-                SetFocus(hWnd);
-                break;
-            case IDC_BUTTON_START:
-            {
-                bool tower, sort;
-                HWND towerCombo = GetDlgItem(hWnd, IDC_COMBO_TOWER);
-                int index = (int)SendMessage(towerCombo, CB_GETCURSEL, 0, 0);
-                BlockType type;
-                SortType sortType;
 
+            Block newBlock(height, weight, xPos, type);
+            BlockManager.AddBlock(newBlock);
 
-                switch (index) {
-                case 0: type = BlockType::Rectangle; tower = true;  break;
-                case 1: type = BlockType::Circle; tower = true;  break;
-                case 2: type = BlockType::Square; tower = true;  break;
-                case 3: type = BlockType::Triangle; tower = true;  break;
-                case 4: sortType = SortType::minMax; sort = true;  break;
-                case 5: sortType = SortType::maxMin; sort = true;  break;
-                case 6: sortType = SortType::minMaxMin; sort = true;  break;
-                default: break;
-                }
+            float xPosNew = (type == BlockType::Rectangle || type == BlockType::Triangle) ? xPos + 40.0f : (xPos + height + 10.0f);
+            wchar_t xPosNewStr[16];
+            swprintf(xPosNewStr, 16, L"%.2f", xPosNew);
+            SetWindowText(GetDlgItem(hWnd, IDC_XPOS), xPosNewStr);
 
-                if (tower) {
-                    Keys.towerType = type;
-                    Keys.towerBuild = true;
-                }
-                else if (sort) {
-                    Keys.sortType = sortType;
-                    Keys.searchingForBlock = true;
-                }
-                SetFocus(hWnd);
+            SetFocus(hWnd);
+            break;
+        }
+        case IDC_BUTTON_CLEAR:
+            BlockManager.Clear();
+            SetFocus(hWnd);
+            break;
+        case IDC_BUTTON_START:
+        {
+            bool tower, sort;
+            HWND towerCombo = GetDlgItem(hWnd, IDC_COMBO_TOWER);
+            int index = (int)SendMessage(towerCombo, CB_GETCURSEL, 0, 0);
+            BlockType type;
+            SortType sortType;
+
+            switch (index) {
+            case 0: type = BlockType::Rectangle; tower = true; sort = false;  break;
+            case 1: type = BlockType::Circle; tower = true; sort = false;  break;
+            case 2: type = BlockType::Square; tower = true; sort = false;  break;
+            case 3: type = BlockType::Triangle; tower = true; sort = false;  break;
+            case 4: sortType = SortType::minMax; tower = false; sort = true;  break;
+            case 5: sortType = SortType::maxMin; tower = false; sort = true;  break;
+            case 6: sortType = SortType::minMaxMin; tower = false; sort = true;  break;
+            default: break;
             }
-                break;
-            case IDC_BUTTON_RECORD:
-                Keys.savingData = true;
-                SetFocus(hWnd);
-                break;
-            case IDC_BUTTON_STOP:
-                Keys.savingData = false;
-                SetFocus(hWnd);
-                break;
-            case IDC_BUTTON_PLAY:
-                Keys.playData = true;
-                SetFocus(hWnd);
-                break;
-            case IDM_ABOUT:
-                DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
-                break;
-            case IDM_EXIT:
-                DestroyWindow(hWnd);
-                break;
-            default:
-                return DefWindowProc(hWnd, message, wParam, lParam);
+
+            if (tower) {
+                Keys.towerType = type;
+                Keys.towerBuild = true;
+                Keys.searchingForBlock = false;
             }
+            else if (sort) {
+                Keys.sortType = sortType;
+                Keys.towerBuild = false;
+                Keys.searchingForBlock = true;
+            }
+            SetFocus(hWnd);
         }
         break;
+        case IDC_BUTTON_RECORD:
+            Keys.savingData = true;
+            SetFocus(hWnd);
+            break;
+        case IDC_BUTTON_STOP:
+            Keys.savingData = false;
+            SetFocus(hWnd);
+            break;
+        case IDC_BUTTON_PLAY:
+            Keys.playData = true;
+            SetFocus(hWnd);
+            break;
+        case IDM_ABOUT:
+            DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
+            break;
+        case IDM_EXIT:
+            DestroyWindow(hWnd);
+            break;
+        default:
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+    }
+    break;
     case WM_PAINT:
-        {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            HDC hdcMemory = CreateCompatibleDC(hdc); //podwojne buforowanie bo mi migało
+    {
+        PAINTSTRUCT ps;
+        HDC hdc = BeginPaint(hWnd, &ps);
+        HDC hdcMemory = CreateCompatibleDC(hdc); //podwojne buforowanie bo mi migało
 
-            RECT rect;
-            GetClientRect(hWnd, &rect);
-       
-            HBITMAP memBitmap = CreateCompatibleBitmap(hdc, rect.right - rect.left, rect.bottom - rect.top);
-            HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcMemory, memBitmap);
+        RECT rect;
+        GetClientRect(hWnd, &rect);
 
-            FillRect(hdcMemory, &rect, (HBRUSH)(COLOR_WINDOW + 1));
-            OnPaint(hdcMemory, MainArm, BlockManager, Keys);
-            BitBlt(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, hdcMemory, 0, 0, SRCCOPY);
+        HBITMAP memBitmap = CreateCompatibleBitmap(hdc, rect.right - rect.left, rect.bottom - rect.top);
+        HBITMAP oldBitmap = (HBITMAP)SelectObject(hdcMemory, memBitmap);
 
-            SelectObject(hdcMemory, oldBitmap);
-            DeleteObject(memBitmap);
-            DeleteDC(hdcMemory);
+        FillRect(hdcMemory, &rect, (HBRUSH)(COLOR_WINDOW + 1));
+        OnPaint(hdcMemory, MainArm, BlockManager, Keys);
+        BitBlt(hdc, 0, 0, rect.right - rect.left, rect.bottom - rect.top, hdcMemory, 0, 0, SRCCOPY);
 
-            EndPaint(hWnd, &ps);
-        }
-        break;
+        SelectObject(hdcMemory, oldBitmap);
+        DeleteObject(memBitmap);
+        DeleteDC(hdcMemory);
+
+        EndPaint(hWnd, &ps);
+    }
+    break;
     case WM_HSCROLL:
     {
         HWND hScroll = (HWND)lParam;

@@ -28,10 +28,10 @@ Robot ma dostępny zbiór elementów o różnej wysokości. Na podstawie położ
 1.8
 Robot ma dostępny zbiór elementów o różnej wysokości. Na podstawie położenia ramienia sprawdza wysokość elementów i ustawia je w kolejności od najniższego do najwyższego.
 
-![Piramida](img_piramida.png "Piramida")
-
 1.8
 Robot ma dostępny zbiór elementów o różnej wysokości. Na podstawie położenia ramienia sprawdza wysokość elementów i ustawia je w następującej kolejności.
+
+![Piramida](img_piramida.png "Piramida")
 
 1.9
 Robot ma dostępny zbiór 4 elementów o różnej masie. Na podstawie tej informacji ustawia elementy w kolejności od najcięższego do najlżejszego.

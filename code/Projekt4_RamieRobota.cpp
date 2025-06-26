@@ -152,6 +152,7 @@ public:
 
     bool movingWeight = false;
     bool failedToPickUp = false;
+    int nrOfBlocksInWeightMoving = 0;
 };
 
 class BlockManager {
@@ -890,21 +891,24 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 VOID OnPaint(HDC hdc, RobotArm& RobotArm, BlockManager& Blocks, KeyManager keys)
 {
     Graphics graphics(hdc);
-    Color blue(255, 0, 0, 255);
+    Color blue(255, 19, 108, 255);
+    Color orange(255, 255, 154, 0);
     Color red(255, 255, 0, 0);
     Color green(255, 0, 255, 0);
     Color black(255, 0, 0, 0);
     SolidBrush redBrush(red);
     SolidBrush greenBrush(green);
     Pen pen(blue, 5);
+    Pen blackpen(black, 7);
+    Pen orangepen(orange, 5);
     Pen armPen(blue, 5);
 
-    graphics.DrawLine(&armPen, RobotArm.shoulder.xStart(), RobotArm.shoulder.yStart(), RobotArm.shoulder.xEnd(), RobotArm.shoulder.yEnd());
-    graphics.DrawLine(&armPen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
+    graphics.DrawLine(&pen, RobotArm.shoulder.xStart(), RobotArm.shoulder.yStart(), RobotArm.shoulder.xEnd(), RobotArm.shoulder.yEnd());
+    graphics.DrawLine(&pen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
 
     // Podstawa
-    graphics.DrawRectangle(&armPen, ROBOT_X - 30.0f, FLOOR_LEVEL - BASE_LEVEL, 60.0f, BASE_LEVEL);
-    graphics.DrawLine(&pen, 0.0f, FLOOR_LEVEL, 1920.0f, FLOOR_LEVEL);
+    graphics.DrawRectangle(&pen, ROBOT_X - 30.0f, FLOOR_LEVEL - BASE_LEVEL, 60.0f, BASE_LEVEL);
+    graphics.DrawLine(&blackpen, 0.0f, FLOOR_LEVEL, 1920.0f, FLOOR_LEVEL);
 
     int colorBlock = 0;
     int color2Block = 0;
@@ -947,13 +951,16 @@ VOID OnPaint(HDC hdc, RobotArm& RobotArm, BlockManager& Blocks, KeyManager keys)
         Point playTriangle[3] = { Point(20, 10), Point(20, 35), Point(45, 22) };
         graphics.FillPolygon(&greenBrush, playTriangle, 3);
     }
+    //podłoga
+    graphics.DrawLine(&blackpen, 0.0f, FLOOR_LEVEL, 1920.0f, FLOOR_LEVEL);
+
 }
 
 
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
-                     _In_opt_ HINSTANCE hPrevInstance,
-                     _In_ LPWSTR    lpCmdLine,
-                     _In_ int       nCmdShow)
+    _In_opt_ HINSTANCE hPrevInstance,
+    _In_ LPWSTR    lpCmdLine,
+    _In_ int       nCmdShow)
 {
 
     MSG                 msg;
@@ -974,7 +981,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
 
     // Wykonaj inicjowanie aplikacji:
-    if (!InitInstance (hInstance, nCmdShow))
+    if (!InitInstance(hInstance, nCmdShow))
     {
         return FALSE;
     }
@@ -1005,17 +1012,17 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 
     wcex.cbSize = sizeof(WNDCLASSEX);
 
-    wcex.style          = CS_HREDRAW | CS_VREDRAW;
-    wcex.lpfnWndProc    = WndProc;
-    wcex.cbClsExtra     = 0;
-    wcex.cbWndExtra     = 0;
-    wcex.hInstance      = hInstance;
-    wcex.hIcon          = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_PROJEKT4RAMIEROBOTA));
-    wcex.hCursor        = LoadCursor(nullptr, IDC_ARROW);
-    wcex.hbrBackground  = (HBRUSH)(COLOR_WINDOW+1);
-    wcex.lpszMenuName   = MAKEINTRESOURCEW(IDC_PROJEKT4RAMIEROBOTA);
-    wcex.lpszClassName  = szWindowClass;
-    wcex.hIconSm        = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
+    wcex.style = CS_HREDRAW | CS_VREDRAW;
+    wcex.lpfnWndProc = WndProc;
+    wcex.cbClsExtra = 0;
+    wcex.cbWndExtra = 0;
+    wcex.hInstance = hInstance;
+    wcex.hIcon = LoadIcon(hInstance, MAKEINTRESOURCE(IDI_PROJEKT4RAMIEROBOTA));
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wcex.lpszMenuName = MAKEINTRESOURCEW(IDC_PROJEKT4RAMIEROBOTA);
+    wcex.lpszClassName = szWindowClass;
+    wcex.hIconSm = LoadIcon(wcex.hInstance, MAKEINTRESOURCE(IDI_SMALL));
 
 
     return RegisterClassExW(&wcex);
@@ -1036,14 +1043,14 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
     hInst = hInstance; // Przechowuj dojście wystąpienia w naszej zmiennej globalnej
 
     HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
-        CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
+        CW_USEDEFAULT, 0, 1300, 630, nullptr, nullptr, hInstance, nullptr);
 
     HWND hScrollBar = CreateWindowEx(
         0,
         L"SCROLLBAR",
         NULL,
         WS_CHILD | WS_VISIBLE | SBS_HORZ,
-        420, 35,
+        435, 35,
         300, 20,
         hWnd,
         (HMENU)1,
@@ -1153,26 +1160,26 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         CreateWindowW(L"EDIT", L"0",
             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-            1200, 40, 120, 20,
+            1150, 40, 80, 20,
             hWnd, (HMENU)IDC_MIN_WEIGHT, hInst, NULL);
 
         CreateWindowW(L"EDIT", L"100",
             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
-            1200, 70, 120, 20,
+            1150, 70, 80, 20,
             hWnd, (HMENU)IDC_MAX_WEIGHT, hInst, NULL);
 
         CreateWindowW(L"BUTTON", L"Set",
             WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
-            1200, 100, 80, 30,
+            1150, 100, 80, 30,
             hWnd, (HMENU)IDC_BUTTON_WEIGHT, hInst, NULL);
 
         CreateWindowW(L"STATIC", L"Min Weight", WS_CHILD | WS_VISIBLE,
-            1110, 42, 85, 20, hWnd, NULL, hInst, NULL);
+            1060, 42, 85, 20, hWnd, NULL, hInst, NULL);
         CreateWindowW(L"STATIC", L"Max Weight", WS_CHILD | WS_VISIBLE,
-            1110, 72, 85, 20, hWnd, NULL, hInst, NULL);
+            1060, 72, 85, 20, hWnd, NULL, hInst, NULL);
 
         CreateWindowW(L"STATIC", L"Arm can't pick up block because its weight isn't in the appropriate range!", WS_CHILD | WS_VISIBLE,
-            1110, 142, 185, 60, hWnd, (HMENU)IDC_TEXT_WEIGHT, hInst, NULL);
+            1060, 142, 185, 60, hWnd, (HMENU)IDC_TEXT_WEIGHT, hInst, NULL);
         ShowWindow(GetDlgItem(hWnd, IDC_TEXT_WEIGHT), SW_HIDE);
 
         /// AUTOMATION
@@ -1181,14 +1188,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         HWND comboTowerShape = CreateWindowW(L"COMBOBOX", NULL,
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-            260, 10, 140, 25 * 11,
+            260, 10, 160, 25 * 11,
             hWnd, (HMENU)IDC_COMBO_TOWER, hInst, NULL);
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Rectangle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Circle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Square");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Triangle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Max Weight Move");
-        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Min & Max Weight Move");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Min&Max Weight Move");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Min to Max");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Max to Min");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Min-Max-Min");
@@ -1201,7 +1208,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             hWnd, (HMENU)IDC_BUTTON_START, hInst, NULL);
 
         CreateWindowW(L"STATIC", L"Speed", WS_CHILD | WS_VISIBLE,
-            420, 12, 50, 20, hWnd, NULL, hInst, NULL);
+            575, 12, 50, 20, hWnd, NULL, hInst, NULL);
 
         //Block(float height, float weight, float x, BlockType type)
         Block KlocekTest1(60.0f, 0.0f, 180.0f, BlockType::Square);
@@ -1221,7 +1228,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (wParam == VK_DOWN) Keys.arrowDOWN = true;
         if (wParam == VK_RIGHT) Keys.arrowRIGHT = true;
         if (wParam == VK_LEFT) Keys.arrowLEFT = true;
-        if (wParam == 'T') Keys.moveToStart = true;
         if (Keys.playData == false) {
             if (wParam == VK_SPACE) {
                 Keys.catching = true;
@@ -1578,6 +1584,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (!Keys.moveToStart && !MoveInProgress)
                 {
                     MainArm.releaseBlock();
+                    if (Keys.nrOfBlocksInWeightMoving >= 3) {
+                        MoveWeighing = MoveWeights::NoMoreBlocks;
+                        break;
+                    }
                     bool noMoreBlocks = true;
                     for (auto& b : BlockManager.BlocksCollection)
                         if (!b.autoMoved)
@@ -1637,6 +1647,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                                     MoveInProgress = true;
                                     Keys.xDifferenceSorting += b.width + 10.0f;
                                     MovePosition = *angles;
+                                    Keys.nrOfBlocksInWeightMoving++;
                                 }
                                 else
                                 {
@@ -1663,6 +1674,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
                 Keys.movingWeight = false;
                 Keys.xDifferenceSorting = 0.0f;
+                Keys.nrOfBlocksInWeightMoving = 0;
 
                 break;
             }
@@ -1746,8 +1758,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case 1: type = BlockType::Circle; tower = true; sort = false; weightSort = false; moveWeight = false; break;
             case 2: type = BlockType::Square; tower = true; sort = false; weightSort = false; moveWeight = false; break;
             case 3: type = BlockType::Triangle; tower = true; sort = false; weightSort = false; moveWeight = false; break;
-            case 4: sortType = SortType::minMax; tower = false; sort = false; weightSort = false; moveWeight = true;  break;
-            case 5: sortType = SortType::minMaxMin; tower = false; sort = false; weightSort = false; moveWeight = true;  break;
+            case 4: sortType = SortType::minMax; tower = false; sort = false; weightSort = false; moveWeight = true;  break; // Move Weight minMAX
+            case 5: sortType = SortType::minMaxMin; tower = false; sort = false; weightSort = false; moveWeight = true;  break; // Move Weight minMAXmin
             case 6: sortType = SortType::minMax; tower = false; sort = true; weightSort = false; moveWeight = false; break;
             case 7: sortType = SortType::maxMin; tower = false; sort = true; weightSort = false; moveWeight = false; break;
             case 8: sortType = SortType::minMaxMin; tower = false; sort = true; weightSort = false; moveWeight = false; break;

@@ -135,8 +135,6 @@ Projekt został wykonany jako klasyczna okienkowa aplikacja Windows (WinAPI) z w
 ## 10. Interfejs graficzny
 
 ![RobotArmGUI](https://github.com/user-attachments/assets/f2293989-9b9f-4025-8466-1ea3e925ed97)
-![RobotArmGUI](https://github.com/user-attachments/assets/f2293989-9b9f-4025-8466-1ea3e925ed97)
-
 
 ## Wykonawcy Projektu
 Szymon Lewicki 203253

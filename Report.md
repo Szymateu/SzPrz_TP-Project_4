@@ -2,7 +2,7 @@
 
 ## 1. Zadanie projektowe
 Celem naszego projektu było wykonanie modelu robota pracującego w dwóch trybach (manualny i automatyczny). Robotem w naszym projekcie nazywamy manipulator o 2 stopniach swobody.
-Zaimplementowane zostały oba te tryby - przy czym tryb automatyczny został podzielony na odtwarzanie nagranego ruchu i automatyczynie wykonywane zadania.
+Zaimplementowane zostały oba te tryby - przy czym tryb automatyczny został podzielony na odtwarzanie nagranego ruchu i automatyczne wykonywane zadania.
 Możliwe jest dostosowanie prędkości robota, a także dodawanie elementów (klocków). Robot pracuje w przestrzeni ograniczonej, jego zakres ruchu został ograniczony, aby nie wchodził w kolizję z samym sobą, albo podłożem.
 Klocki nie podlegają żadnym prawom fizyki (nie zachodzi z nimi kolizja, nie działa na nie grawitacja). Za pomocą ramienia robota można przenosić, łapać i opuszczać klocki.
 Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.

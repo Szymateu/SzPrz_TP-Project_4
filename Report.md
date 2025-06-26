@@ -111,7 +111,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - 3 klocki o masach: `2kg`, `5kg`, `12kg`
 - Maksymalny udźwig: `10kg`
 
-### Oczekiwany wynik:
+### Działanie programu:
 - Przeniesione zostaną tylko klocki o masie `2kg` i `5kg`.
 - Użytkownik otrzyma komunikat o przekroczeniu dopuszczalnej masy przez klocek `12kg`.
 
@@ -134,6 +134,8 @@ Projekt został wykonany jako klasyczna okienkowa aplikacja Windows (WinAPI) z w
 
 ## 10. Interfejs graficzny
 
+![RobotArmGUI](https://github.com/user-attachments/assets/f2293989-9b9f-4025-8466-1ea3e925ed97)
+![RobotArmGUI](https://github.com/user-attachments/assets/f2293989-9b9f-4025-8466-1ea3e925ed97)
 
 
 ## Wykonawcy Projektu

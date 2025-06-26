@@ -7,7 +7,7 @@ Możliwe jest dostosowanie prędkości robota, a także dodawanie elementów (kl
 Klocki nie podlegają żadnym prawom fizyki (nie zachodzi z nimi kolizja, nie działa na nie grawitacja). Za pomocą ramienia robota można przenosić, łapać i opuszczać klocki.
 Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
-## 2. Opis działania 
+## 2. Funkcje i GUI 
 
 ### 2.1 Tryby pracy robota
 
@@ -15,7 +15,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - **Tryb odtwarzania**: Nagrywanie i odtwarzanie wcześniej nagranych ruchów robota.
 - **Tryb automatyczny**: Automatyczne wykonywanie wybranego zadania.
 
-### 2.2 Sterowanie
+### 2.2 Interfejs użytkownika
 - Strzałki klawiatury: ruch ramienia; strzałki lewo/prawo poruszają pierwszym segmentem robota, a góra/dół - drugi segment.
 - Spacja - złap klocek.
 - R - upuść klocek.
@@ -31,7 +31,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ---
 
-## 3. Model robota
+## 3. Model manipulatora (robota)
 
 - Robot porusza się w przestrzeni 2D ograniczonej długością jego segmentów.
 - Ramię posiada **2 stopnie swobody** (x, y).
@@ -71,26 +71,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - Robot zakończy działanie jeśli skończą mu się klocki albo gdy znajdą się one poza jego zasięgiem.
 
 ---
-
-## 5. Interfejs użytkownika
-
-- **Przyciski**:
-  - `Record`
-  - `Play`
-  - `Stop`
-  - `Clear`
-- **Pole wyboru**:
-  - `Automation`: lista zadań (sort, build tower, mass sort itd.)
-- **Pola tekstowe**:
-  - Dodawanie klocków – wprowadzenie wysokości, pozycji, masy, kształtu.
-  - Dodawanie limitów wagowych.
-- **Wyświetlanie komunikatów**:
-  - O przekroczeniu masy (tekstowy)
-  - O nagrywaniu i odtwarzaniu ruchów (ikonki w lewym górnym rogu)
-
----
-
-## 6. Przykład działania – Budowa wieży
+## 5. Przykład działania – Budowa wieży
 
 ### Dane wejściowe:
 - 6 klocków o jednakowych wymiarach
@@ -105,7 +86,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ---
 
-## 7. Przykład działania – Ograniczenie masy
+## 6. Przykład działania – Ograniczenie masy
 
 ### Dane wejściowe:
 - 3 klocki o masach: `2kg`, `5kg`, `12kg`
@@ -117,7 +98,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ---
 
-## 8. Ustawienia prędkości ramienia
+## 7. Ustawienia prędkości ramienia
 
 - Prędkość ustalana przez użytkownika z poziomu GUI.
 - Wpływa na czas trwania ruchu pomiędzy punktami.
@@ -125,14 +106,14 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ---
 
-## 9. Podsumowanie
+## 8. Podsumowanie
 
 Symulacja spełnia wszystkie założenia projektowa, a także pozwala na wykonanie wszystkich zadań. Dokładność działania ramienia, a także kolizje z obiektami zostały uproszczone, ale spełniają wszystkie wymagania.
 Projekt został wykonany jako klasyczna okienkowa aplikacja Windows (WinAPI) z wykorzystaniem biblioteki gdi+. Aplikacja została napisana w języku C++ 17.
 
 ---
 
-## 10. Interfejs graficzny
+## 9. Interfejs graficzny
 
 ![RobotArmGUI](https://github.com/user-attachments/assets/f2293989-9b9f-4025-8466-1ea3e925ed97)
 

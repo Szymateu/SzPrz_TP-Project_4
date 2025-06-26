@@ -7,7 +7,7 @@ Możliwe jest dostosowanie prędkości robota, a także dodawanie elementów (kl
 Klocki nie podlegają żadnym prawom fizyki (nie zachodzi z nimi kolizja, nie działa na nie grawitacja). Za pomocą ramienia robota można przenosić, łapać i opuszczać klocki.
 Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
-## 2. Opis funkcjonalności
+## 2. Opis działania 
 
 ### 2.1 Tryby pracy robota
 

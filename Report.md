@@ -48,7 +48,7 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - Kształty: kwadrat, koło, trójkąt, prostokąt.
 - Wieże budowane przy użyciu trybu automatycznego.
 - Wieże mogą być zbudowane z innej liczby bloków niż 6.
-- Robot kończy pracę, jeśli klocek lub szczyt wieży znajduje siępoza jego zasięgiem.
+- Robot kończy pracę, jeśli klocek lub szczyt wieży znajduje się poza jego zasięgiem.
 
 ### 1.5 Ograniczenie maksymalnej masy [Max Weight Move]
 - Przenoszone są **3** klocki spełniające kryterium `masa ≤ udźwig`.
@@ -75,14 +75,14 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ### Dane wejściowe:
 - 6 klocków o jednakowych wymiarach
-- Pozycja startowa: Pierwszy znaleziony klocek
+- Pozycja startowa: Pierwszy znaleziony klocek w zasięgu robota
 - Kształt: prostokąt
 
 ### Przebieg:
 1. Użytkownik dodaje klocki.
 2. Wybiera w menu Automation `Tower Rectangle`.
 3. Zatwierdza przyciskiem Start
-4. Robot podnosi każdy klocek w zasięgu i o kształcie protokąta, po czym ustawia jeden na drugim.
+4. Robot podnosi każdy klocek w zasięgu i o kształcie prostokąta, po czym ustawia jeden na drugim.
 
 ---
 

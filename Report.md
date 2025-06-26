@@ -49,27 +49,28 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - Robot kończy pracę, jeśli klocek lub szczyt wieży znajduje siępoza jego zasięgiem.
 
 ### 1.5 Ograniczenie maksymalnej masy [Max Weight Move]
-- Przenoszone są tylko **3** klocki spełniające kryterium `masa ≤ udźwig`.
+- Przenoszone są **3** klocki spełniające kryterium `masa ≤ udźwig`.
 - Przy zbyt dużej wadze wyświetla się stosowny komunikat pod oknem Set.
 
 ### 1.6 Ograniczenie minimalnej i maksymalnej masy [Min&Max Weight]
-- Przenoszone tylko **3** klocki w przedziale masowym `[min, max]`.
+- Przenoszone są **3** klocki mieszczące się w przedziale masowym `[min, max]`.
 - Przy nieodpowiedniej wadze wyświetla się stosowny komunikat pod oknem Set.
 
 ### 1.7–1.8 Sortowanie wg wysokości [Height Min/Max to Max/Min], [Height Min/Max/Min]
 - **1.7**: Od najwyższego do najniższego.
 - **1.8**: Od najniższego do najwyższego.
 - **1.8.2 W kolejności Min Max Min.
+- Robot zakończy działanie jeśli skończą mu się klocki albo gdy znajdą się one poza jego zasięgiem.
+
 
 ### 1.9–1.10 Sortowanie wg masy [Weight Min/Max to Max/Min]
 - **1.9**: Od najcięższego do najlżejszego.
 - **1.10**: Od najlżejszego do najcięższego.
+- Robot zakończy działanie jeśli skończą mu się klocki albo gdy znajdą się one poza jego zasięgiem.
 
 ---
 
 ## 5. Interfejs użytkownika
-
-### Elementy GUI:
 
 - **Przyciski**:
   - `Record`
@@ -125,14 +126,13 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 ## 9. Podsumowanie
 
 Symulacja spełnia wszystkie założenia projektowa, a także pozwala na wykonanie wszystkich zadań. Dokładność działania ramienia, a także kolizje z obiektami zostały uproszczone, ale spełniają wszystkie wymagania.
+Projekt został wykonany jako klasyczna okienkowa aplikacja Windows (WinAPI) z wykorzystaniem biblioteki gdi+. Aplikacja została napisana w języku C++ 17.
 
 ---
 
-## 10. Załączniki
+## 10. Interfejs graficzny
 
-- Zrzuty ekranu interfejsu graficznego
-- Fragmenty kodu (opcjonalnie)
-- Pliki projektu (jeśli wymagane)
+
 
 ## Wykonawcy Projektu
 Szymon Lewicki 203253

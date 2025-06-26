@@ -49,11 +49,11 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 - Robot kończy pracę, jeśli klocek lub szczyt wieży znajduje siępoza jego zasięgiem.
 
 ### 1.5 Ograniczenie maksymalnej masy [Max Weight Move]
-- Przenoszone są tylko klocki spełniające kryterium `masa ≤ udźwig`.
+- Przenoszone są tylko **3** klocki spełniające kryterium `masa ≤ udźwig`.
 - Przy zbyt dużej wadze wyświetla się stosowny komunikat pod oknem Set.
 
 ### 1.6 Ograniczenie minimalnej i maksymalnej masy [Min&Max Weight]
-- Przenoszone tylko klocki w przedziale masowym `[min, max]`.
+- Przenoszone tylko **3** klocki w przedziale masowym `[min, max]`.
 - Przy nieodpowiedniej wadze wyświetla się stosowny komunikat pod oknem Set.
 
 ### 1.7–1.8 Sortowanie wg wysokości [Height Min/Max to Max/Min], [Height Min/Max/Min]

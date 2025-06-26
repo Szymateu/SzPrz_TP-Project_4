@@ -32,6 +32,12 @@
 //automation
 #define IDC_COMBO_TOWER 1201
 #define IDC_BUTTON_START 1202
+
+//max-min weight
+#define IDC_MIN_WEIGHT 1301
+#define IDC_MAX_WEIGHT 1302
+#define IDC_BUTTON_WEIGHT 1303
+#define IDC_TEXT_WEIGHT 1304
 #endif
 // Następne wartości domyślne dla nowych obiektów
 //

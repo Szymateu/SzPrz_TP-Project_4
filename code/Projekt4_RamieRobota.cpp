@@ -1,5 +1,4 @@
-﻿// Projekt4_RamieRobota.cpp : Definiuje punkt wejścia dla aplikacji.
-//
+﻿// Projekt 4 Techniki Programowania 2025 PG ACiR gr 3 - Szymon Lewicki 203253, Przemysław Olszewski 203217
 #include "framework.h"
 #include "Projekt4_RamieRobota.h"
 #include <string> // do usunięcia na koniec!!!!
@@ -147,6 +146,12 @@ public:
     std::vector<Block> sortedVec;
     SortType sortType = SortType::maxMin;
     float xDifferenceSorting = 0.0f;
+
+    bool weightSorting = false;
+    std::vector<Block> sortWeightVec;
+
+    bool movingWeight = false;
+    bool failedToPickUp = false;
 };
 
 class BlockManager {
@@ -185,12 +190,29 @@ enum class SortBlocks {
     NoMoreBlocks
 };
 
+enum class SortWeights {
+    GoToStart,
+    MeasureWeights,
+    GoToBlock,
+    MoveBlock,
+    NoMoreBlocks
+};
+
+enum class MoveWeights {
+    GoToStart,
+    GoToBlock,
+    MoveBlock,
+    NoMoreBlocks
+};
+
 class RobotArm {
 public:
     Block* heldBlock = nullptr;
     ArmModule shoulder;
     ArmModule forearm;
     bool checkCollisions = true; // kolizje ramienia
+    bool useMinLoad = true;
+    bool useMaxLoad = true;
 
     RobotArm()
         :
@@ -370,20 +392,21 @@ public:
 
     }
 
-    bool TryCatch(BlockManager& blocks) {
+    bool TryCatch(BlockManager& Blocks, KeyManager& Keys) {
         if (heldBlock == nullptr) {
-            for (Block& b : blocks.BlocksCollection) {
+            for (Block& b : Blocks.BlocksCollection) {
                 float dx = b.xPoint - forearm.xEnd();
                 float dy = b.yPoint - forearm.yEnd();
                 float dist = std::sqrt(dx * dx + dy * dy);
 
-                if (dist < 20.0f) {
-                    if (b.weight < maxLoad) {
+                if (dist < 15.0f) {
+                    if ((b.weight <= maxLoad || !useMaxLoad) && (b.weight >= minLoad || !useMinLoad)) {
                         heldBlock = &b;
                         return true;
                     }
                     else {
-                        return false; // i włącz jakiś alarm
+                        Keys.failedToPickUp = true;
+                        return false;
                     }
                 }
             }
@@ -414,17 +437,24 @@ public:
     void setForearmAngle(float fi) {
         angleForearm = fi;
     }
+
+    void minMaxWeight(float minWeight, float maxWeight)
+    {
+        minLoad = minWeight;
+        maxLoad = maxWeight;
+    }
 private:
     float length = 250;
     float xBase = ROBOT_X;
     static float angleShoulder;
     static float angleForearm;
-    float maxLoad = 80.0f;
+    float minLoad = 0.0f;
+    float maxLoad = 100.0f;
 };
 
 // program start - RobotArm positions
-float RobotArm::angleShoulder = 0.785f;
-float RobotArm::angleForearm = 1.57f;
+float RobotArm::angleShoulder = DEFAULT_ANGLE_SHOULDER;
+float RobotArm::angleForearm = DEFAULT_ANGLE_FOREARM;
 
 struct SaveMove {
     std::deque<float> angleShoulder;
@@ -728,6 +758,117 @@ public:
         State = SortBlocks::NoMoreBlocks;
         return TargetAngle();
     }
+
+    void sortWeights(KeyManager& Keys, SortWeights& State, SortType& sortType, BlockManager& Blocks)
+    {
+        Keys.heightOfBlocksVec.clear();
+
+        for (Block& b : Blocks.BlocksCollection)
+            if (b.autoMoved == false)
+            {
+                Keys.heightOfBlocksVec.push_back(std::make_tuple(b, b.weight));
+            }
+
+        Keys.sortWeightVec.clear();
+
+        int valueIndex;
+        float value;
+        int i = 0;
+
+        const size_t numberOfBlocks = Keys.heightOfBlocksVec.size();
+
+        if (sortType == SortType::minMax)
+        {
+            for (int j = 0; j < numberOfBlocks; j++)
+            {
+                i = 0;
+                valueIndex = 0;
+                value = std::get<1>(Keys.heightOfBlocksVec[0]);
+
+                for (auto& a : Keys.heightOfBlocksVec)
+                {
+                    if (std::get<1>(a) < value)
+                    {
+                        value = std::get<1>(a);
+                        valueIndex = i;
+                    }
+                    i++;
+                }
+                Keys.sortWeightVec.push_back(std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+                Keys.heightOfBlocksVec.erase(Keys.heightOfBlocksVec.begin() + valueIndex);
+            }
+        }
+        else if (sortType == SortType::maxMin)
+        {
+            for (int j = 0; j < numberOfBlocks; j++)
+            {
+                i = 0;
+                valueIndex = 0;
+                value = std::get<1>(Keys.heightOfBlocksVec[0]);
+
+                for (auto& a : Keys.heightOfBlocksVec)
+                {
+                    if (std::get<1>(a) > value)
+                    {
+                        value = std::get<1>(a);
+                        valueIndex = i;
+                    }
+                    i++;
+                }
+                Keys.sortWeightVec.push_back(std::get<0>(Keys.heightOfBlocksVec[valueIndex]));
+                Keys.heightOfBlocksVec.erase(Keys.heightOfBlocksVec.begin() + valueIndex);
+            }
+        }
+    }
+
+    TargetAngle anglesWeights(KeyManager& Keys, SortWeights& State, BlockManager& Blocks)
+    {
+        if (State == SortWeights::GoToBlock)
+        {
+            for (Block& b : Keys.sortWeightVec)
+            {
+                if (b.autoMoved == false)
+                {
+                    auto angles = MainArm.PointsToAnglev2(b.xPoint, b.yPoint);
+
+                    if (angles.has_value())
+                    {
+                        State = SortWeights::MoveBlock;
+                        return *angles;
+                    }
+                    else
+                    {
+                        b.autoMoved = true;
+                        return TargetAngle();
+                    }
+                }
+            }
+        }
+        else if (State == SortWeights::MoveBlock)
+        {
+            const float lengthArm = MainArm.shoulder.length + MainArm.forearm.length;
+            for (Block& b : Keys.sortWeightVec)
+                if (b.autoMoved == false)
+                {
+                    auto angles = MainArm.PointsToAnglev2(ROBOT_X - lengthArm + 50.0f + Keys.xDifferenceSorting + b.width / 2, FLOOR_LEVEL - b.height);
+                    b.autoMoved = true;
+                    State = SortWeights::GoToBlock;
+
+                    if (angles.has_value())
+                    {
+                        Keys.xDifferenceSorting += b.width + 10.0f;
+                        return *angles;
+                    }
+                    else
+                    {
+                        MainArm.releaseBlock();
+                        return TargetAngle();
+                    }
+                }
+        }
+        State = SortWeights::NoMoreBlocks;
+        return TargetAngle();
+    }
 };
 
 bool MovePossible(RobotArm& RobotArm, KeyManager Keys) {
@@ -752,20 +893,34 @@ VOID OnPaint(HDC hdc, RobotArm& RobotArm, BlockManager& Blocks, KeyManager keys)
     Color blue(255, 0, 0, 255);
     Color red(255, 255, 0, 0);
     Color green(255, 0, 255, 0);
+    Color black(255, 0, 0, 0);
     SolidBrush redBrush(red);
     SolidBrush greenBrush(green);
-    Pen pen(Color(255, 0, 0, 255), 5);
-    Pen blockPen(blue, 5);
+    Pen pen(blue, 5);
+    Pen armPen(blue, 5);
 
-
-    graphics.DrawLine(&pen, RobotArm.shoulder.xStart(), RobotArm.shoulder.yStart(), RobotArm.shoulder.xEnd(), RobotArm.shoulder.yEnd());
-    graphics.DrawLine(&pen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
+    graphics.DrawLine(&armPen, RobotArm.shoulder.xStart(), RobotArm.shoulder.yStart(), RobotArm.shoulder.xEnd(), RobotArm.shoulder.yEnd());
+    graphics.DrawLine(&armPen, RobotArm.forearm.xStart(), RobotArm.forearm.yStart(), RobotArm.forearm.xEnd(), RobotArm.forearm.yEnd());
 
     // Podstawa
-    graphics.DrawRectangle(&pen, ROBOT_X - 30.0f, FLOOR_LEVEL - BASE_LEVEL, 60.0f, BASE_LEVEL);
+    graphics.DrawRectangle(&armPen, ROBOT_X - 30.0f, FLOOR_LEVEL - BASE_LEVEL, 60.0f, BASE_LEVEL);
     graphics.DrawLine(&pen, 0.0f, FLOOR_LEVEL, 1920.0f, FLOOR_LEVEL);
 
+    int colorBlock = 0;
+    int color2Block = 0;
+
     for (Block& b : Blocks.BlocksCollection) {
+        // jakieś tam zmienianie koloru gdy jest większa waga bloku
+        colorBlock = (int)(abs(b.weight)); color2Block = 0;
+        while (colorBlock < 0) colorBlock += 510;
+        while (colorBlock > 510) colorBlock -= 510;
+        if (colorBlock > 255)
+        {
+            colorBlock = 510 - colorBlock;
+            color2Block += (255 - colorBlock) / 4;
+        }
+        Pen blockPen(Color(255, colorBlock, color2Block, 255 - colorBlock), 5);
+
         switch (b.bType)
         {
         case (BlockType::Rectangle):
@@ -925,6 +1080,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     static BuildTower Building;
     static SortBlocks Sorting;
+    static SortWeights Weighing;
+    static MoveWeights MoveWeighing;
     static KeyManager Keys;
     static RobotArm MainArm(250);
     static BlockManager BlockManager;
@@ -972,7 +1129,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             900, 70, 120, 20,
             hWnd, (HMENU)IDC_WEIGHT, hInst, NULL);
 
-        CreateWindowW(L"EDIT", L"200",
+        CreateWindowW(L"EDIT", L"700",
             WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
             900, 100, 120, 20,
             hWnd, (HMENU)IDC_XPOS, hInst, NULL);
@@ -994,21 +1151,49 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             750, 10, 60, 30,
             hWnd, (HMENU)IDC_BUTTON_CLEAR, hInst, NULL);
 
+        CreateWindowW(L"EDIT", L"0",
+            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
+            1200, 40, 120, 20,
+            hWnd, (HMENU)IDC_MIN_WEIGHT, hInst, NULL);
+
+        CreateWindowW(L"EDIT", L"100",
+            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_NUMBER,
+            1200, 70, 120, 20,
+            hWnd, (HMENU)IDC_MAX_WEIGHT, hInst, NULL);
+
+        CreateWindowW(L"BUTTON", L"Set",
+            WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
+            1200, 100, 80, 30,
+            hWnd, (HMENU)IDC_BUTTON_WEIGHT, hInst, NULL);
+
+        CreateWindowW(L"STATIC", L"Min Weight", WS_CHILD | WS_VISIBLE,
+            1110, 42, 85, 20, hWnd, NULL, hInst, NULL);
+        CreateWindowW(L"STATIC", L"Max Weight", WS_CHILD | WS_VISIBLE,
+            1110, 72, 85, 20, hWnd, NULL, hInst, NULL);
+
+        CreateWindowW(L"STATIC", L"Arm can't pick up block because its weight isn't in the appropriate range!", WS_CHILD | WS_VISIBLE,
+            1110, 142, 185, 60, hWnd, (HMENU)IDC_TEXT_WEIGHT, hInst, NULL);
+        ShowWindow(GetDlgItem(hWnd, IDC_TEXT_WEIGHT), SW_HIDE);
+
         /// AUTOMATION
         CreateWindowW(L"STATIC", L"Automation", WS_CHILD | WS_VISIBLE,
             178, 12, 80, 20, hWnd, NULL, hInst, NULL);
 
         HWND comboTowerShape = CreateWindowW(L"COMBOBOX", NULL,
             WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST,
-            260, 10, 140, 25 * 7,
+            260, 10, 140, 25 * 11,
             hWnd, (HMENU)IDC_COMBO_TOWER, hInst, NULL);
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Rectangle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Circle");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Square");
         SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Tower Triangle");
-        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Min to Max");
-        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Max to Min");
-        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Sort Min-Max-Min");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Max Weight Move");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Min & Max Weight Move");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Min to Max");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Max to Min");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Height Min-Max-Min");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Weight Min to Max");
+        SendMessage(comboTowerShape, CB_ADDSTRING, 0, (LPARAM)L"Weight Max to Min");
         SendMessage(comboTowerShape, CB_SETCURSEL, 0, 0);
 
         CreateWindow(L"BUTTON", L"START", WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
@@ -1019,10 +1204,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             420, 12, 50, 20, hWnd, NULL, hInst, NULL);
 
         //Block(float height, float weight, float x, BlockType type)
-        Block KlocekTest1(60.0f, 70.0f, 180.0f, BlockType::Square);
-        Block KlocekTest2(130.0f, 70.0f, 400.0f, BlockType::Triangle);
-        Block KlocekTest3(100.0f, 70.0f, 850.0f, BlockType::Rectangle);
-        Block KlocekTest4(80.0f, 70.0f, 1000.0f, BlockType::Circle);
+        Block KlocekTest1(60.0f, 0.0f, 180.0f, BlockType::Square);
+        Block KlocekTest2(130.0f, 40.0f, 400.0f, BlockType::Triangle);
+        Block KlocekTest3(100.0f, 25.0f, 850.0f, BlockType::Rectangle);
+        Block KlocekTest4(80.0f, 75.0f, 1000.0f, BlockType::Circle);
         BlockManager.AddBlock(KlocekTest1);
         BlockManager.AddBlock(KlocekTest2);
         BlockManager.AddBlock(KlocekTest3);
@@ -1040,7 +1225,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (Keys.playData == false) {
             if (wParam == VK_SPACE) {
                 Keys.catching = true;
-                MainArm.TryCatch(BlockManager);
+                MainArm.TryCatch(BlockManager, Keys);
             }
         }
         if (wParam == 'R') MainArm.releaseBlock();
@@ -1076,10 +1261,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             MainArm.MoveAngle(StartPosition, Keys, Keys.moveToStart);
             MovementNoCollisions = true;
         }
-        else MovementNoCollisions = false;
+        else
+        {
+            MovementNoCollisions = false;
+            if (MoveWeighing == MoveWeights::GoToStart) ShowWindow(GetDlgItem(hWnd, IDC_TEXT_WEIGHT), SW_HIDE);
+        }
 
         if (MoveInProgress) MainArm.MoveAngle(MovePosition, Keys, MoveInProgress);
 
+        // building tower of blocks
         if (Keys.towerHeight >= 5) {
             Keys.towerBuild = false;
             Building = BuildTower::GoToStart;
@@ -1090,12 +1280,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (b.bType == Keys.towerType)
                     b.autoMoved = false;
             }
+            MainArm.useMinLoad = 1;
+            MainArm.useMaxLoad = 1;
         }
 
         if (Keys.towerBuild) {
             switch (Building) {
             case (BuildTower::GoToStart):
             {
+                MainArm.useMinLoad = 0;
+                MainArm.useMaxLoad = 0;
                 Keys.moveToStart = true;
                 MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); // najpierw znajdujemy pierwszy klocek
                 if (Building != BuildTower::SkipBrickStart) Building = BuildTower::GoToBrick;
@@ -1119,7 +1313,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case (BuildTower::CatchBrick):
             {
                 if (MoveInProgress == false) {
-                    MainArm.TryCatch(BlockManager);
+                    MainArm.TryCatch(BlockManager, Keys);
                     Building = BuildTower::MoveBrickToTower;
                     MovePosition = Automation.Tower(Keys.towerType, Keys, Building, BlockManager); //teraz przenosimy drugi na pierwszy
                 }
@@ -1151,6 +1345,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             switch (Sorting) {
             case (SortBlocks::GoToStart):
             {
+                MainArm.useMinLoad = 0;
+                MainArm.useMaxLoad = 0;
                 Keys.moveToStart = true;
                 Sorting = SortBlocks::ArmMeasure;
                 Keys.heightOfBlocksVec.clear();
@@ -1209,7 +1405,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 if (!MoveInProgress)
                 {
                     MoveInProgress = true;
-                    MainArm.TryCatch(BlockManager);
+                    MainArm.TryCatch(BlockManager, Keys);
                     MovePosition = Automation.sortBlocks(Keys, Sorting, BlockManager);
                 }
                 break;
@@ -1224,11 +1420,256 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 Keys.xDifferenceSorting = 0.0f;
 
                 Sorting = SortBlocks::GoToStart;
+                MainArm.useMinLoad = 1;
+                MainArm.useMaxLoad = 1;
+
+                break;
+            }
+            }
+
+            // sorting by weight
+            if (Keys.weightSorting)
+            {
+                switch (Weighing) {
+                case (SortWeights::GoToStart):
+                {
+                    Keys.moveToStart = true;
+                    Keys.heightOfBlocksVec.clear();
+
+                    Weighing = SortWeights::MeasureWeights;
+                    break;
+                }
+                case (SortWeights::MeasureWeights):
+                {
+                    if (!Keys.moveToStart)
+                    {
+                        Automation.sortWeights(Keys, Weighing, Keys.sortType, BlockManager);
+                        for (Block& b : Keys.sortWeightVec)
+                            b.autoMoved = false;
+                        Weighing = SortWeights::GoToBlock;
+                    }
+
+                    break;
+                }
+                case (SortWeights::GoToBlock):
+                {
+                    MovementNoCollisions = true;
+                    if (!MoveInProgress)
+                    {
+                        MoveInProgress = true;
+                        MainArm.releaseBlock();
+                        MovePosition = Automation.anglesWeights(Keys, Weighing, BlockManager);
+                    }
+                    break;
+                }
+                case (SortWeights::MoveBlock):
+                {
+                    MovementNoCollisions = true;
+                    if (!MoveInProgress)
+                    {
+                        MoveInProgress = true;
+                        MainArm.TryCatch(BlockManager, Keys);
+                        MovePosition = Automation.anglesWeights(Keys, Weighing, BlockManager);
+                    }
+                    break;
+                }
+                case (SortWeights::NoMoreBlocks):
+                {
+                    for (Block& b : BlockManager.BlocksCollection)
+                        b.autoMoved = false;
+
+                    Keys.weightSorting = false;
+                    Keys.moveToStart = true;
+                    Keys.xDifferenceSorting = 0.0f;
+
+                    Weighing = SortWeights::GoToStart;
+
+                    break;
+                }
+                }
+            }
+        }
+
+        // sorting by weight
+        if (Keys.weightSorting)
+        {
+            switch (Weighing) {
+            case (SortWeights::GoToStart):
+            {
+                MainArm.useMinLoad = 0;
+                MainArm.useMaxLoad = 0;
+                Keys.moveToStart = true;
+                Keys.heightOfBlocksVec.clear();
+
+                Weighing = SortWeights::MeasureWeights;
+                break;
+            }
+            case (SortWeights::MeasureWeights):
+            {
+                if (!Keys.moveToStart)
+                {
+                    Automation.sortWeights(Keys, Weighing, Keys.sortType, BlockManager);
+                    for (Block& b : Keys.sortWeightVec)
+                        b.autoMoved = false;
+                    Weighing = SortWeights::GoToBlock;
+                }
+
+                break;
+            }
+            case (SortWeights::GoToBlock):
+            {
+                MovementNoCollisions = true;
+                if (!MoveInProgress)
+                {
+                    MoveInProgress = true;
+                    MainArm.releaseBlock();
+                    MovePosition = Automation.anglesWeights(Keys, Weighing, BlockManager);
+                }
+                break;
+            }
+            case (SortWeights::MoveBlock):
+            {
+                MovementNoCollisions = true;
+                if (!MoveInProgress)
+                {
+                    MoveInProgress = true;
+                    MainArm.TryCatch(BlockManager, Keys);
+                    MovePosition = Automation.anglesWeights(Keys, Weighing, BlockManager);
+                }
+                break;
+            }
+            case (SortWeights::NoMoreBlocks):
+            {
+                for (Block& b : BlockManager.BlocksCollection)
+                    b.autoMoved = false;
+
+                Keys.weightSorting = false;
+                Keys.moveToStart = true;
+                Keys.xDifferenceSorting = 0.0f;
+
+                Weighing = SortWeights::GoToStart;
+
+                Keys.sortWeightVec.clear();
+                MainArm.useMinLoad = 1;
+                MainArm.useMaxLoad = 1;
 
                 break;
             }
             }
         }
+
+        if (Keys.movingWeight)
+        {
+            switch (MoveWeighing) {
+            case (MoveWeights::GoToStart):
+            {
+                if (Keys.sortType == SortType::minMax)
+                    MainArm.useMinLoad = 0;
+                else
+                    MainArm.useMinLoad = 1;
+                MainArm.useMaxLoad = 1;
+                Keys.moveToStart = true;
+
+                MoveWeighing = MoveWeights::GoToBlock;
+                break;
+            }
+            case (MoveWeights::GoToBlock):
+            {
+                if (!Keys.moveToStart && !MoveInProgress)
+                {
+                    MainArm.releaseBlock();
+                    bool noMoreBlocks = true;
+                    for (auto& b : BlockManager.BlocksCollection)
+                        if (!b.autoMoved)
+                        {
+                            noMoreBlocks = false;
+                            auto angles = MainArm.PointsToAnglev2(b.xPoint, b.yPoint);
+
+                            if (angles.has_value())
+                            {
+                                MoveInProgress = true;
+                                MoveWeighing = MoveWeights::MoveBlock;
+                                MovePosition = *angles;
+                            }
+                            else
+                            {
+                                b.autoMoved = true;
+                                MovePosition = TargetAngle();
+                            }
+                            break;
+                        }
+                    if (noMoreBlocks)
+                    {
+                        MoveWeighing = MoveWeights::NoMoreBlocks;
+                    }
+                }
+                break;
+            }
+            case (MoveWeights::MoveBlock):
+            {
+                if (!MoveInProgress)
+                {
+                    MainArm.TryCatch(BlockManager, Keys);
+                    if (Keys.failedToPickUp)
+                    {
+                        ShowWindow(GetDlgItem(hWnd, IDC_TEXT_WEIGHT), SW_SHOW);
+                        Keys.failedToPickUp = false;
+                        MoveWeighing = MoveWeights::GoToBlock;
+                        for (Block& b : BlockManager.BlocksCollection)
+                            if (b.autoMoved == false) {
+                                b.autoMoved = true;
+                                break;
+                            }
+                    }
+                    else
+                    {
+                        ShowWindow(GetDlgItem(hWnd, IDC_TEXT_WEIGHT), SW_HIDE);
+                        const float lengthArm = MainArm.shoulder.length + MainArm.forearm.length;
+                        for (Block& b : BlockManager.BlocksCollection)
+                            if (b.autoMoved == false)
+                            {
+                                auto angles = MainArm.PointsToAnglev2(ROBOT_X - lengthArm + 50.0f + Keys.xDifferenceSorting + b.width / 2, FLOOR_LEVEL - b.height);
+                                b.autoMoved = true;
+                                MoveWeighing = MoveWeights::GoToBlock;
+
+                                if (angles.has_value())
+                                {
+                                    MoveInProgress = true;
+                                    Keys.xDifferenceSorting += b.width + 10.0f;
+                                    MovePosition = *angles;
+                                }
+                                else
+                                {
+                                    MainArm.releaseBlock();
+                                    MovePosition = TargetAngle();
+                                }
+                                break;
+                            }
+                    }
+                }
+                break;
+            }
+            case (MoveWeights::NoMoreBlocks):
+            {
+                for (Block& b : BlockManager.BlocksCollection)
+                    b.autoMoved = false;
+
+                MoveInProgress = false;
+                Keys.moveToStart = true;
+                MoveWeighing = MoveWeights::GoToStart;
+
+                MainArm.useMinLoad = 1;
+                MainArm.useMaxLoad = 1;
+
+                Keys.movingWeight = false;
+                Keys.xDifferenceSorting = 0.0f;
+
+                break;
+            }
+
+            }
+        }
+
         InvalidateRect(hWnd, NULL, FALSE);
         return 0;
     case WM_COMMAND:
@@ -1237,6 +1678,20 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         switch (wmId)
         {
+        case IDC_BUTTON_WEIGHT:
+        {
+            wchar_t minStr[16], maxStr[16];
+            GetWindowText(GetDlgItem(hWnd, IDC_MIN_WEIGHT), minStr, 16);
+            GetWindowText(GetDlgItem(hWnd, IDC_MAX_WEIGHT), maxStr, 16);
+
+            float minW = wcstof(minStr, nullptr);
+            float maxW = wcstof(maxStr, nullptr);
+
+            MainArm.minMaxWeight(minW, maxW);
+
+            SetFocus(hWnd);
+            break;
+        }
         case IDC_BUTTON_CREATE:
         {
             // Pobierz dane z pól
@@ -1273,25 +1728,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
         case IDC_BUTTON_CLEAR:
+        {
             BlockManager.Clear();
             SetFocus(hWnd);
             break;
+        }
         case IDC_BUTTON_START:
         {
-            bool tower, sort;
+            bool tower, sort, weightSort, moveWeight;
             HWND towerCombo = GetDlgItem(hWnd, IDC_COMBO_TOWER);
             int index = (int)SendMessage(towerCombo, CB_GETCURSEL, 0, 0);
             BlockType type;
             SortType sortType;
 
             switch (index) {
-            case 0: type = BlockType::Rectangle; tower = true; sort = false;  break;
-            case 1: type = BlockType::Circle; tower = true; sort = false;  break;
-            case 2: type = BlockType::Square; tower = true; sort = false;  break;
-            case 3: type = BlockType::Triangle; tower = true; sort = false;  break;
-            case 4: sortType = SortType::minMax; tower = false; sort = true;  break;
-            case 5: sortType = SortType::maxMin; tower = false; sort = true;  break;
-            case 6: sortType = SortType::minMaxMin; tower = false; sort = true;  break;
+            case 0: type = BlockType::Rectangle; tower = true; sort = false; weightSort = false; moveWeight = false; break;
+            case 1: type = BlockType::Circle; tower = true; sort = false; weightSort = false; moveWeight = false; break;
+            case 2: type = BlockType::Square; tower = true; sort = false; weightSort = false; moveWeight = false; break;
+            case 3: type = BlockType::Triangle; tower = true; sort = false; weightSort = false; moveWeight = false; break;
+            case 4: sortType = SortType::minMax; tower = false; sort = false; weightSort = false; moveWeight = true;  break;
+            case 5: sortType = SortType::minMaxMin; tower = false; sort = false; weightSort = false; moveWeight = true;  break;
+            case 6: sortType = SortType::minMax; tower = false; sort = true; weightSort = false; moveWeight = false; break;
+            case 7: sortType = SortType::maxMin; tower = false; sort = true; weightSort = false; moveWeight = false; break;
+            case 8: sortType = SortType::minMaxMin; tower = false; sort = true; weightSort = false; moveWeight = false; break;
+            case 9: sortType = SortType::minMax; tower = false; sort = false; weightSort = true; moveWeight = false; break;
+            case 10: sortType = SortType::maxMin; tower = false; sort = false; weightSort = true; moveWeight = false;  break;
             default: break;
             }
 
@@ -1299,11 +1760,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 Keys.towerType = type;
                 Keys.towerBuild = true;
                 Keys.searchingForBlock = false;
+                Keys.weightSorting = false;
+                Keys.movingWeight = false;
             }
             else if (sort) {
                 Keys.sortType = sortType;
                 Keys.towerBuild = false;
                 Keys.searchingForBlock = true;
+                Keys.weightSorting = false;
+                Keys.movingWeight = false;
+            }
+            else if (weightSort) {
+                Keys.sortType = sortType;
+                Keys.towerBuild = false;
+                Keys.searchingForBlock = false;
+                Keys.weightSorting = true;
+                Keys.movingWeight = false;
+            }
+            else if (moveWeight) {
+                Keys.sortType = sortType;
+                Keys.towerBuild = false;
+                Keys.searchingForBlock = false;
+                Keys.weightSorting = false;
+                Keys.movingWeight = true;
             }
             SetFocus(hWnd);
         }

@@ -17,6 +17,8 @@ Robot wykonuje wszystkie automatyczne działania opisane w zadaniu.
 
 ### 2.2 Sterowanie
 - Strzałki klawiatury: ruch ramienia; strzałki lewo/prawo poruszają pierwszym segmentem robota, a góra/dół - drugi segment.
+- Spacja - złap klocek.
+- R - upuść klocek.
 - Przycisk „Record” – zapis ruchów do pamięci.
 - Przycisk "Stop" - zatrzymaj nagrywanie.
 - Przycisk „Play” – automatyczne wykonanie zapisanej sekwencji.
